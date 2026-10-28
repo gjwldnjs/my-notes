@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>내 메모장</title>
+  <meta name="description" content="폴더처럼 정리하고 마크다운으로 쓰는 개인 메모장">
+  <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1d1c1a" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="메모장">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M6 4h9l4 4v12H6z"/><path d="M9 11h7M9 15h5"/></svg></span><span class="brand-name">내 메모장</span></div>
+    <div class="search-wrap">
+      <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg></span>
+      <input id="q" type="search" placeholder="검색 또는 #태그" autocomplete="off" aria-label="검색">
+      <div id="results" class="results" hidden></div>
+    </div>
+    <div class="actions">
+      <button id="btn-work" class="pill-btn" type="button" title="오늘 업무일지" data-ic="brief"><span class="lbl">업무일지</span></button>
+      <button id="btn-diary" class="pill-btn" type="button" title="오늘 일기" data-ic="book"><span class="lbl">일기</span></button>
+      <button id="btn-date" class="icon-btn" type="button" title="날짜 골라 일지 열기" aria-label="날짜 골라 일지 열기" data-ic="cal"></button>
+      <button id="btn-supp" class="icon-btn" type="button" title="영양제 체크" aria-label="영양제 체크" data-ic="pill"></button>
+      <button id="sync-chip" class="sync-chip" type="button"></button>
+      <button id="btn-settings" class="icon-btn" type="button" title="설정" aria-label="설정" data-ic="gear"></button>
+    </div>
+  </header>
+
+  <div class="mnav">
+    <button id="m-back" class="icon-btn" type="button" aria-label="뒤로" data-ic="back" hidden></button>
+    <div id="m-title">전체</div>
+  </div>
+
+  <main class="browser">
+    <div class="columns" id="columns"></div>
+    <section class="editor" id="editor"></section>
+  </main>
+
+  <dialog id="dlg"></dialog>
+  <div id="menu" class="menu" hidden></div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
