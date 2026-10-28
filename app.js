@@ -5,6 +5,7 @@ import { state } from './store.js';
 import * as Sync from './sync.js';
 import { suppEl } from './supp.js';
 import { calEl, calGoto } from './calendar.js';
+import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const mq = window.matchMedia('(max-width: 760px)');
@@ -293,25 +294,39 @@ function toggleFocus(on = !document.body.classList.contains('focus')) {
   if (b) b.replaceWith(iconBtn(on ? 'chev' : 'back', '목록 숨기기/보이기 (Ctrl+\\)', () => toggleFocus()));
 }
 
-const ed = { id: null, mode: 'view', at: 0, pending: false, crumbs: null, meta: null, body: null, supp: null };
+const ed = { id: null, at: 0, pending: false, crumbs: null, meta: null, body: null, supp: null, cal: null, editor: null, flush: null };
+
+// 열려 있던 편집기를 닫기 전에 덜 저장된 글을 저장한다
+function closeEditor() {
+  ed.flush?.();
+  ed.editor?.destroy();
+  ed.editor = null;
+  ed.flush = null;
+}
 
 function renderEditor(reason = 'local') {
   const box = $('#editor');
   const n = S.get(ui.note);
-  if (!n) { ed.id = null; box.replaceChildren(emptyEl()); if (document.body.classList.contains('focus')) toggleFocus(false); return; }
+  if (!n) {
+    closeEditor();
+    ed.id = null;
+    box.replaceChildren(emptyEl());
+    if (document.body.classList.contains('focus')) toggleFocus(false);
+    return;
+  }
   if (ed.id !== n.id || !!n.pending !== ed.pending || !box.querySelector('.ed-inner')) { buildEditor(n); return; }
   const t = $('.ed-title', box);
   if (t && document.activeElement !== t && t.value !== n.name) t.value = n.name;
   paintCrumbs(n);
   if (n.contentAt !== ed.at && reason === 'remote') {
+    // 다른 기기에서 바뀐 내용 반영
     ed.at = n.contentAt;
-    const ta = $('.ed-text', box);
-    if (ta && ed.mode === 'edit') {
-      const a = ta.selectionStart, b = ta.selectionEnd;
-      ta.value = n.content;
-      ta.setSelectionRange(Math.min(a, ta.value.length), Math.min(b, ta.value.length));
-      autosize(ta);
-    } else paintBody(n);
+    if (ed.editor && getMarkdown(ed.editor) !== n.content) {
+      const { from } = ed.editor.state.selection;
+      setMarkdown(ed.editor, n.content);
+      const max = ed.editor.state.doc.content.size;
+      try { ed.editor.commands.setTextSelection(Math.min(from, max)); } catch {}
+    }
     ed.supp?.repaint();
     ed.cal?.repaint();
   }
@@ -320,17 +335,17 @@ function renderEditor(reason = 'local') {
 
 function buildEditor(n) {
   const box = $('#editor');
+  closeEditor();
   ed.id = n.id;
   ed.at = n.contentAt;
   ed.pending = !!n.pending;
   ed.supp = null;
   ed.cal = null;
-  ed.mode = ui.mode || (n.kind === 'supp' || n.kind === 'cal' || n.content.trim() ? 'view' : 'edit');
   ui.mode = null;
   const title = h('input', {
     class: 'ed-title', value: n.name, placeholder: '제목 없음', 'aria-label': '제목',
     oninput: (e) => S.rename(n.id, e.target.value),
-    onkeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); setMode('edit', { pos: 0 }); } },
+    onkeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ed.editor?.commands.focus('start'); } },
   });
   ed.crumbs = h('nav', { class: 'crumbs' });
   ed.meta = h('div', { class: 'ed-meta' });
@@ -351,11 +366,8 @@ function buildEditor(n) {
   box.scrollTop = 0;
   paintCrumbs(n);
   paintMeta(n);
-  paintBody(n);
-  if (ed.mode === 'edit' && !n.pending) {
-    const ta = $('.ed-text', box);
-    if (ta) { autosize(ta); ta.focus({ preventScroll: true }); ta.setSelectionRange(0, 0); }
-  }
+  if (n.pending) ed.body.replaceChildren(h('p', { class: 'muted' }, '다른 기기에서 쓴 내용을 불러오는 중이에요…'));
+  else ed.body.replaceChildren(mountEditor(n));
 }
 
 function paintCrumbs(n) {
@@ -372,272 +384,64 @@ function paintMeta(n) {
   ed.meta.replaceChildren(...[
     h('div', { class: 'tags' }, tags.map((tg) => h('button', { type: 'button', class: 'tag', onclick: () => searchFor('#' + tg) }, '#' + tg))),
     t ? h('span', { class: 'muted when' }, `수정 ${t}`) : null,
-    n.pending ? null : h('div', { class: 'seg', role: 'group', 'aria-label': '보기 방식' },
-      h('button', { type: 'button', class: ed.mode === 'view' ? 'on' : '', title: '보기 (Ctrl+E)', onclick: () => setMode('view') }, icon('eye'), h('span', { class: 'lbl' }, '보기')),
-      h('button', { type: 'button', class: ed.mode === 'edit' ? 'on' : '', title: '편집 (Ctrl+E)', onclick: () => setMode('edit') }, icon('edit'), h('span', { class: 'lbl' }, '편집'))),
   ].filter(Boolean));
 }
 
-function paintBody(n) {
-  if (n.pending) { ed.body.replaceChildren(h('p', { class: 'muted' }, '다른 기기에서 쓴 내용을 불러오는 중이에요…')); return; }
-  ed.body.replaceChildren(ed.mode === 'edit' ? editEl(n) : viewEl(n));
-}
-
-function setMode(m, opt = {}) {
-  const n = S.get(ed.id);
-  if (!n || n.pending) return;
-  const box = $('#editor');
-  const st = box.scrollTop;
-  ed.mode = m;
-  paintMeta(n);
-  paintBody(n);
-  box.scrollTop = st;
-  if (m === 'edit') {
-    const ta = $('.ed-text');
-    autosize(ta);
-    ta.focus({ preventScroll: true });
-    const pos = opt.pos ?? ta.value.length;
-    ta.setSelectionRange(pos, pos);
-  }
-}
-
-function autosize(ta) {
-  if (!ta) return;
-  const box = $('#editor');
-  const st = box.scrollTop;
-  ta.style.height = 'auto';
-  ta.style.height = `${ta.scrollHeight + 2}px`;
-  box.scrollTop = st;
-}
-
-// --- 보기 ---
-function renderMd(src) {
-  if (!window.marked) return `<pre>${esc(src)}</pre>`;
-  const html = window.marked.parse(src, { gfm: true, breaks: true });
-  return window.DOMPurify ? window.DOMPurify.sanitize(html) : html;
-}
-
-const TAG_RE = /(^|[\s(（,])#([\p{L}_][\p{L}\p{N}_\-/]*)/gu;
-function decorateTags(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (t) => (t.parentElement.closest('code, pre, a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+// --- 노션식 편집기 (쓰는 화면 = 보이는 화면, 저장은 마크다운) ---
+function mountEditor(n) {
+  const host = h('div', { class: 'ed-host' });
+  let saveT = null, metaT = null;
+  const editor = createEditor({
+    element: host,
+    content: n.content,
+    placeholder: n.kind === 'supp' || n.kind === 'cal'
+      ? '메모를 쓰세요'
+      : "'/'를 누르면 메뉴가 떠요 · ## 제목 · - 목록 · [] 할 일 · **굵게** · #태그",
+    onChange: () => {
+      clearTimeout(saveT);
+      saveT = setTimeout(save, 250);
+      clearTimeout(metaT);
+      metaT = setTimeout(() => { const c = S.get(n.id); if (c && ed.id === c.id) paintMeta(c); }, 700);
+    },
   });
-  const texts = [];
-  while (walker.nextNode()) texts.push(walker.currentNode);
-  for (const t of texts) {
-    const s = t.nodeValue;
-    if (!s.includes('#')) continue;
-    const frag = document.createDocumentFragment();
-    let last = 0, found = false;
-    for (const m of s.matchAll(TAG_RE)) {
-      found = true;
-      const start = m.index + m[1].length;
-      frag.append(s.slice(last, start));
-      const tag = m[2];
-      frag.append(h('button', { type: 'button', class: 'tag', onclick: (e) => { e.stopPropagation(); searchFor('#' + tag); } }, '#' + tag));
-      last = start + 1 + tag.length;
-    }
-    if (!found) continue;
-    frag.append(s.slice(last));
-    t.replaceWith(frag);
-  }
-}
-
-function toggleTask(id, idx) {
-  const n = S.get(id);
-  const lines = n.content.split('\n');
-  let k = -1, inCode = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^\s*```/.test(lines[i])) { inCode = !inCode; continue; }
-    if (inCode) continue;
-    const m = lines[i].match(/^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)\[( |x|X)\]/);
-    if (m && ++k === idx) {
-      lines[i] = m[1] + (m[2] === ' ' ? '[x]' : '[ ]') + lines[i].slice(m[0].length);
-      break;
+  // 바뀐 글을 마크다운으로 바꿔 저장 (열기만 하고 안 고치면 저장하지 않음)
+  function save() {
+    clearTimeout(saveT);
+    saveT = null;
+    const cur = S.get(n.id);
+    if (!cur || editor.isDestroyed) return;
+    const md = getMarkdown(editor);
+    if (md !== cur.content) {
+      S.setContent(n.id, md);
+      if (ed.id === n.id) ed.at = S.get(n.id).contentAt;
     }
   }
-  S.setContent(id, lines.join('\n'));
-  ed.at = S.get(id).contentAt;
+  ed.editor = editor;
+  ed.flush = () => { if (saveT) save(); };
+  return h('div', { class: 'ed-edit' }, toolbar(editor), host);
 }
 
-function caretFromPoint(x, y, src) {
-  let node = null, off = 0;
-  if (document.caretPositionFromPoint) { const p = document.caretPositionFromPoint(x, y); if (p) { node = p.offsetNode; off = p.offset; } }
-  else if (document.caretRangeFromPoint) { const r = document.caretRangeFromPoint(x, y); if (r) { node = r.startContainer; off = r.startOffset; } }
-  if (!node || node.nodeType !== 3) return null;
-  const text = node.nodeValue;
-  const a = Math.max(0, off - 12);
-  for (const [key, shift] of [[text.slice(a, off + 12), off - a], [text.slice(a, off), off - a], [text.slice(off, off + 12), 0]]) {
-    if (key.trim().length < 2) continue;
-    const i = src.indexOf(key);
-    if (i >= 0) return i + shift;
-  }
-  return null;
-}
-
-function viewEl(n) {
-  const art = h('article', { class: 'md' });
-  if (!n.content.trim()) art.append(h('p', { class: 'placeholder' }, n.kind === 'supp' || n.kind === 'cal' ? '메모가 없어요. 눌러서 쓰세요.' : '비어 있어요. 눌러서 쓰기 시작하세요.'));
-  else art.innerHTML = renderMd(n.content);
-  art.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
-    cb.disabled = false;
-    const li = cb.closest('li');
-    li?.classList.add('task');
-    li?.classList.toggle('done', cb.checked);
-    cb.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleTask(n.id, i);
-      li?.classList.toggle('done', cb.checked);
-    });
-  });
-  art.querySelectorAll('a[href]').forEach((a) => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
-  decorateTags(art);
-  art.addEventListener('click', (e) => {
-    if (e.target.closest('a, input, button')) return;
-    if (String(window.getSelection())) return;
-    const pos = caretFromPoint(e.clientX, e.clientY, n.content);
-    setMode('edit', pos != null ? { pos } : {});
-  });
-  return art;
-}
-
-// --- 편집 ---
-function editEl(n) {
-  const ta = h('textarea', {
-    class: 'ed-text', spellcheck: 'false', 'aria-label': '본문',
-    placeholder: '여기에 쓰세요.\n\n## 제목   - 목록   - [ ] 할 일   **굵게**\n#태그 를 붙이면 검색에서 모아 볼 수 있어요.',
-  });
-  ta.value = n.content;
-  let metaT;
-  ta.addEventListener('input', () => {
-    S.setContent(n.id, ta.value);
-    ed.at = S.get(n.id).contentAt;
-    autosize(ta);
-    clearTimeout(metaT);
-    metaT = setTimeout(() => { const c = S.get(n.id); if (c && ed.id === c.id) paintMeta(c); }, 700);
-  });
-  ta.addEventListener('keydown', onEditorKey);
-  requestAnimationFrame(() => autosize(ta));
-  return h('div', { class: 'ed-edit' }, toolbar(ta), ta);
-}
-
-function replaceRange(ta, start, end, text, selS, selE) {
-  ta.focus({ preventScroll: true });
-  ta.setSelectionRange(start, end);
-  let ok = false;
-  try {
-    if (text) ok = document.execCommand('insertText', false, text);
-    else if (start !== end) ok = document.execCommand('delete');
-    else ok = true;
-  } catch {}
-  if (!ok) { ta.setRangeText(text, start, end, 'end'); ta.dispatchEvent(new Event('input', { bubbles: true })); }
-  if (selS != null) ta.setSelectionRange(selS, selE ?? selS);
-}
-
-function lineRange(ta) {
-  const v = ta.value;
-  const s = v.lastIndexOf('\n', ta.selectionStart - 1) + 1;
-  let e = v.indexOf('\n', ta.selectionEnd);
-  if (e < 0) e = v.length;
-  return [s, e];
-}
-
-const KIND = {
-  '## ': /^\s*#{1,6}\s/,
-  '- [ ] ': /^\s*[-*+]\s+\[[ xX]\]/,
-  '- ': /^\s*[-*+]\s+(?!\[[ xX]\])/,
-  '1. ': /^\s*\d+[.)]\s/,
-};
-const MARK = /^(\s*)(#{1,6}\s+|[-*+]\s+\[[ xX]\]\s*|[-*+]\s+|\d+[.)]\s+)?/;
-function linePrefix(ta, prefix) {
-  const [s, e] = lineRange(ta);
-  const lines = ta.value.slice(s, e).split('\n');
-  const all = lines.every((l) => KIND[prefix].test(l));
-  const out = lines.map((l, i) => {
-    const m = l.match(MARK);
-    const rest = l.slice(m[0].length);
-    if (all) return m[1] + rest;
-    return m[1] + (prefix === '1. ' ? `${i + 1}. ` : prefix) + rest;
-  }).join('\n');
-  replaceRange(ta, s, e, out, s + out.length);
-}
-
-function wrap(ta, mark) {
-  const { selectionStart: s, selectionEnd: e, value: v } = ta;
-  const sel = v.slice(s, e);
-  if (sel.length > mark.length * 2 && sel.startsWith(mark) && sel.endsWith(mark)) {
-    const inner = sel.slice(mark.length, -mark.length);
-    replaceRange(ta, s, e, inner, s, s + inner.length);
-  } else {
-    replaceRange(ta, s, e, mark + sel + mark, s + mark.length, e + mark.length);
-  }
-}
-
-function insert(ta, text) {
-  const s = ta.selectionStart;
-  replaceRange(ta, s, ta.selectionEnd, text, s + text.length);
-}
-
-function insertBlock(ta, block) {
-  const s = ta.selectionStart;
-  const v = ta.value;
-  const pre = s === 0 || v[s - 1] === '\n' ? '' : '\n';
-  insert(ta, `${pre}${block}\n`);
-}
-
-function indent(ta, out) {
-  const { selectionStart: a, selectionEnd: b } = ta;
-  const [s, e] = lineRange(ta);
-  const lines = ta.value.slice(s, e).split('\n');
-  let first = 0;
-  const res = lines.map((l, i) => {
-    if (out) { const m = l.match(/^( {1,2}|\t)/); const d = m ? m[0].length : 0; if (i === 0) first = -d; return l.slice(d); }
-    if (i === 0) first = 2;
-    return '  ' + l;
-  }).join('\n');
-  if (a === b) replaceRange(ta, s, e, res, Math.max(s, a + first));
-  else replaceRange(ta, s, e, res, s, s + res.length);
-}
-
-function onEditorKey(e) {
-  const ta = e.target;
-  if (e.isComposing || e.keyCode === 229) return;
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); wrap(ta, '**'); return; }
-  if (e.key === 'Tab') { e.preventDefault(); indent(ta, e.shiftKey); return; }
-  if (e.key === 'Escape') { e.preventDefault(); setMode('view'); return; }
-  if (e.key !== 'Enter' || e.shiftKey || mod) return;
-  const { selectionStart: s, selectionEnd: en, value: v } = ta;
-  if (s !== en) return;
-  const ls = v.lastIndexOf('\n', s - 1) + 1;
-  const line = v.slice(ls, s);
-  const m = line.match(/^(\s*(?:>\s*)?)((?:[-*+]|(\d+)[.)])\s+(?:\[[ xX]\]\s+)?)/);
-  if (!m) return;
-  e.preventDefault();
-  let le = v.indexOf('\n', s);
-  if (le < 0) le = v.length;
-  if (line.trim() === (m[1] + m[2]).trim() && !v.slice(s, le).trim()) {
-    replaceRange(ta, ls, le, '', ls); // 빈 항목에서 Enter → 목록 끝내기
-    return;
-  }
-  let marker = m[2];
-  if (m[3]) marker = marker.replace(/^\d+/, String(+m[3] + 1));
-  marker = marker.replace(/\[[xX]\]/, '[ ]');
-  insert(ta, '\n' + m[1] + marker);
-}
-
-function toolbar(ta) {
-  const b = (label, title, fn) => h('button', { type: 'button', class: 'tb', title, onmousedown: (e) => e.preventDefault(), onclick: () => fn(ta) }, label);
-  return h('div', { class: 'toolbar' },
-    b('제목', '제목 줄 (##)', (t) => linePrefix(t, '## ')),
-    b(h('b', {}, 'B'), '굵게 (Ctrl+B)', (t) => wrap(t, '**')),
-    b('☐ 할 일', '할 일 체크박스', (t) => linePrefix(t, '- [ ] ')),
-    b('• 목록', '글머리 목록', (t) => linePrefix(t, '- ')),
-    b('1. 번호', '번호 목록', (t) => linePrefix(t, '1. ')),
-    b('표', '표 넣기', (t) => insertBlock(t, '| 항목 | 내용 |\n| --- | --- |\n|  |  |')),
-    b('구분선', '구분선', (t) => insertBlock(t, '---')),
-    b('시각', '지금 시각 넣기', (t) => { const d = new Date(); insert(t, `${pad(d.getHours())}:${pad(d.getMinutes())} `); }),
+function toolbar(editor) {
+  const btns = [];
+  const b = (label, title, run, isOn) => {
+    const el = h('button', { type: 'button', class: 'tb', title, onmousedown: (e) => e.preventDefault(), onclick: () => run(editor.chain().focus()).run() }, label);
+    btns.push([el, isOn]);
+    return el;
+  };
+  const bar = h('div', { class: 'toolbar' },
+    b('제목', '제목 (## + 스페이스)', (c) => c.toggleHeading({ level: 2 }), () => editor.isActive('heading')),
+    b(h('b', {}, 'B'), '굵게 (Ctrl+B, **글자**)', (c) => c.toggleBold(), () => editor.isActive('bold')),
+    b('☐ 할 일', '체크박스 ([] + 스페이스)', (c) => c.toggleTaskList(), () => editor.isActive('taskList')),
+    b('• 목록', '글머리 목록 (- + 스페이스)', (c) => c.toggleBulletList(), () => editor.isActive('bulletList')),
+    b('1. 번호', '번호 목록 (1. + 스페이스)', (c) => c.toggleOrderedList(), () => editor.isActive('orderedList')),
+    b('표', '표 넣기', (c) => c.insertTable({ rows: 3, cols: 2, withHeaderRow: true })),
+    b('구분선', '구분선 (---)', (c) => c.setHorizontalRule()),
+    b('시각', '지금 시각 넣기', (c) => { const d = new Date(); return c.insertContent(`${pad(d.getHours())}:${pad(d.getMinutes())} `); }),
   );
+  const refresh = () => { for (const [el, isOn] of btns) if (isOn) el.classList.toggle('on', !!isOn()); };
+  editor.on('transaction', refresh);
+  refresh();
+  return bar;
 }
 
 function emptyEl() {
@@ -653,7 +457,7 @@ function emptyEl() {
       h('button', { type: 'button', class: 'btn', onclick: () => openDaily('diary') }, icon('book'), '오늘 일기'),
       h('button', { type: 'button', class: 'btn', onclick: openSupp }, icon('pill'), '영양제 체크'),
       h('button', { type: 'button', class: 'btn', onclick: () => openCalendar() }, icon('cal'), '캘린더')),
-    h('p', { class: 'hint' }, 'Ctrl+K 검색 · Ctrl+E 보기/편집 · Ctrl+S 지금 동기화', h('br'), '항목을 끌어서 순서를 바꾸거나 폴더에 넣을 수 있어요')));
+    h('p', { class: 'hint' }, "Ctrl+K 검색 · Ctrl+S 지금 동기화 · 글 속에서 '/'를 누르면 메뉴", h('br'), '항목을 끌어서 순서를 바꾸거나 폴더에 넣을 수 있어요')));
 }
 
 // ---------- 일지·영양제 ----------
@@ -688,17 +492,8 @@ function openDaily(kind, date = new Date()) {
   const mf = ensureChild(`${root.id}~${y}-${pad(m)}`, 'folder', `${m}월`, yf.id, m).n;
   const tpl = (work ? state.settings.workTemplate : state.settings.diaryTemplate) || '';
   const { n, isNew } = ensureChild(`${root.id}~${ymd(date)}`, 'note', `${m}월 ${d}일 (${WD[date.getDay()]})`, mf.id, d, tpl);
-  openNote(n.id, isNew ? 'edit' : null);
-  if (isNew) {
-    // 템플릿 첫 칸으로 커서 이동
-    const ta = $('.ed-text');
-    if (ta) {
-      let p = tpl.indexOf('\n') + 1;
-      const le = tpl.indexOf('\n', p);
-      if (/^\s*([-*+]|\d+[.)])\s/.test(tpl.slice(p, le < 0 ? undefined : le))) p = le < 0 ? tpl.length : le;
-      ta.setSelectionRange(p, p);
-    }
-  }
+  openNote(n.id);
+  if (isNew && ed.editor) focusFirstSlot(ed.editor); // 템플릿 첫 칸으로 커서 이동
 }
 
 function openSupp() {
@@ -1013,8 +808,7 @@ async function init() {
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     if (mod && k === 'k') { e.preventDefault(); q.focus(); q.select(); }
-    else if (mod && k === 's') { e.preventDefault(); S.persist(true); Sync.syncNow(); toast(Sync.configured() ? '동기화할게요' : '이 기기에 저장돼 있어요'); }
-    else if (mod && k === 'e' && ed.id) { e.preventDefault(); setMode(ed.mode === 'edit' ? 'view' : 'edit'); }
+    else if (mod && k === 's') { e.preventDefault(); ed.flush?.(); S.persist(true); Sync.syncNow(); toast(Sync.configured() ? '동기화할게요' : '이 기기에 저장돼 있어요'); }
     else if (mod && e.key === '\\' && !isMobile()) { e.preventDefault(); toggleFocus(); }
     else if (e.key === 'Escape') closeMenu();
   });
@@ -1027,9 +821,9 @@ async function init() {
   setInterval(() => { if (document.visibilityState === 'visible') Sync.syncNow(); }, 60000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') Sync.syncNow();
-    else { S.persist(true); if (state.sync.dirty) Sync.syncNow(); }
+    else { ed.flush?.(); S.persist(true); if (state.sync.dirty) Sync.syncNow(); }
   });
-  window.addEventListener('pagehide', () => S.persist(true));
+  window.addEventListener('pagehide', () => { ed.flush?.(); S.persist(true); });
   window.addEventListener('online', () => Sync.syncNow());
   window.addEventListener('offline', () => Sync.refreshStatus());
   mq.addEventListener('change', render);

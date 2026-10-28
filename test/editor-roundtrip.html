@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>편집기 왕복 시험</title>
+<div id="ed"></div>
+<pre id="out"></pre>
+<script type="module">
+  import { createEditor, getMarkdown, setMarkdown } from '../vendor/editor.js';
+  const samples = {
+    work: '## 오늘 할 일\n- [x] 보고서 초안 쓰기\n- [ ] 회의 준비 #회의\n\n## 한 일\n- 점심 회의 (폰)\n\n## 메모\n- \n\n## 내일 할 일\n- [ ] ',
+    diary: '## 오늘 있었던 일\n폰에서 쓴 일기\n두 번째 줄\n\n## 기분·생각\n\n\n## 고마웠던 것\n- ',
+    rich: '# 큰 제목\n본문에 **굵게** 와 *기울임*, `코드`, [링크](https://example.com)\n\n> 인용문\n\n1. 하나\n2. 둘\n   - 안쪽\n\n---\n\n| 항목 | 내용 |\n| --- | --- |\n| 가 | 나 |\n\n```\ncode block\n```\n#태그 와 #업무/회의 , a_b 3*4',
+  };
+  const res = {};
+  for (const [k, src] of Object.entries(samples)) {
+    const host = document.createElement('div');
+    document.body.append(host);
+    const ed = createEditor({ element: host, content: src });
+    const once = getMarkdown(ed);
+    setMarkdown(ed, once);
+    const twice = getMarkdown(ed);
+    res[k] = { same: once === src, stable: once === twice, out: once };
+    ed.destroy();
+  }
+  window.RESULT = res;
+  document.getElementById('out').textContent = JSON.stringify(res, null, 2);
+</script>

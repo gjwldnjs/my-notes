@@ -11,6 +11,8 @@
 - `supp.js` — 영양제 체크 표
 - `calendar.js`, `holidays.js` — 월별 캘린더(반복·여러 날 일정), 한국 공휴일
 - `widget/` — 아이폰 Scriptable 캘린더 위젯과 설치 안내
+- `vendor/editor.js` — 노션식 편집기(Tiptap) 묶음. 원본은 `editor-src/editor.js`,
+  고친 뒤 `editor-src`에서 `npm install` (처음 한 번) → `npm run build`
 - `sw.js`, `manifest.webmanifest`, `icon*` — 휴대폰 홈 화면 앱·오프라인
 - `test/mock-github.js` — 테스트용 가짜 GitHub 서버
 

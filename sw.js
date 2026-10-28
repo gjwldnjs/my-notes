@@ -1,6 +1,6 @@
 // 오프라인에서도 앱 화면이 열리도록 앱 파일을 보관한다. GitHub API 요청은 건드리지 않는다.
-const CACHE = 'my-notes-v2';  // 앱을 고칠 때마다 숫자를 올리면 휴대폰도 새 버전을 받는다
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'dom.js', 'store.js', 'sync.js',  'supp.js', 'calendar.js', 'holidays.js', 'icon.svg', 'manifest.webmanifest'];
+const CACHE = 'my-notes-v3';  // 앱을 고칠 때마다 숫자를 올리면 휴대폰도 새 버전을 받는다
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'dom.js', 'store.js', 'sync.js',  'supp.js', 'calendar.js', 'holidays.js', 'vendor/editor.js', 'icon.svg', 'manifest.webmanifest'];
 const CDN = ['cdnjs.cloudflare.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', (e) => {
