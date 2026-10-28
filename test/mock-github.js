@@ -94,6 +94,19 @@ http.createServer((req, res) => {
       const t = trees.get(mm[1]);
       return t ? send(res, 200, { sha: mm[1], tree: t }) : send(res, 404, { message: 'Not Found' });
     }
+    const wantsRaw = /raw/.test(req.headers.accept || '');
+    if (rest.startsWith('/contents/') && req.method === 'GET') {
+      const name = rest.slice('/contents/'.length);
+      let found = null;
+      if (head) for (const e of trees.get(commits.get(head).tree)) if (e.path === name && e.type === 'blob') found = e.sha;
+      if (!found) return send(res, 404, { message: 'Not Found' });
+      if (wantsRaw) { res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' }); return res.end(blobs.get(found)); }
+      return send(res, 200, { sha: found, encoding: 'base64', content: blobs.get(found).toString('base64') });
+    }
+    if ((mm = rest.match(/^\/git\/blobs\/(\w+)$/)) && req.method === 'GET' && wantsRaw && blobs.has(mm[1])) {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      return res.end(blobs.get(mm[1]));
+    }
     if ((mm = rest.match(/^\/git\/blobs\/(\w+)$/)) && req.method === 'GET') {
       const b = blobs.get(mm[1]);
       return b ? send(res, 200, { sha: mm[1], encoding: 'base64', content: b.toString('base64').replace(/(.{60})/g, '$1\n') }) : send(res, 404, { message: 'Not Found' });

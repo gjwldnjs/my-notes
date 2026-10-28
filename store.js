@@ -41,6 +41,7 @@ export function defaultSettings() {
     workFolder: 'seed-work',
     diaryFolder: 'seed-diary',
     suppNote: 'seed-supp',
+    calNote: 'seed-cal',
     workTemplate: '## 오늘 할 일\n- [ ] \n\n## 한 일\n- \n\n## 메모\n\n\n## 내일 할 일\n- [ ] ',
     diaryTemplate: '## 오늘 있었던 일\n\n\n## 기분·생각\n\n\n## 고마웠던 것\n- ',
   };
@@ -61,7 +62,10 @@ function seed() {
   });
   const supp = n('seed-supp', 'note', 'supp', '영양제', 4);
   supp.data = { items: [], log: {} };
-  return [n('seed-work', 'folder', null, '업무일지', 1), n('seed-diary', 'folder', null, '일기', 2), n('seed-memo', 'folder', null, '메모', 3), supp];
+  return [n('seed-work', 'folder', null, '업무일지', 1), n('seed-diary', 'folder', null, '일기', 2), n('seed-memo', 'folder', null, '메모', 3), supp, seedCal()];
+}
+function seedCal() {
+  return { id: 'seed-cal', type: 'note', kind: 'cal', name: '캘린더', parent: null, pos: 5, created: 0, metaAt: 0, contentAt: 0, content: '', data: { events: [] }, trashed: null };
 }
 
 export async function load() {
@@ -74,6 +78,8 @@ export async function load() {
     state.settings = { ...defaultSettings(), ...saved.settings };
     state.settingsAt = saved.settingsAt || 0;
     state.sync = { ...state.sync, ...saved.sync };
+    // 캘린더가 생기기 전부터 쓰던 기기에도 캘린더를 넣어 준다 (고정 id라 기기끼리 합쳐짐)
+    if (!state.nodes['seed-cal'] && !state.deleted['seed-cal']) state.nodes['seed-cal'] = seedCal();
   } else {
     for (const n of seed()) state.nodes[n.id] = n;
   }

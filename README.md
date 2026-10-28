@@ -1,7 +1,7 @@
 # 내 메모장
 
 폴더처럼 정리하고(열 펼침 화면), 마크다운으로 쓰는 개인 메모장.
-업무일지·일기는 날짜별 자동 생성, 영양제는 체크 표, 전체 검색과 #태그.
+업무일지·일기는 날짜별 자동 생성, 영양제는 체크 표, 월별 캘린더, 전체 검색과 #태그.
 
 ## 파일
 - `index.html`, `style.css` — 화면
@@ -9,6 +9,8 @@
 - `store.js` — 메모 데이터, 이 기기 저장(IndexedDB)
 - `sync.js` — GitHub 비공개 저장소와 동기화
 - `supp.js` — 영양제 체크 표
+- `calendar.js`, `holidays.js` — 월별 캘린더(반복·여러 날 일정), 한국 공휴일
+- `widget/` — 아이폰 Scriptable 캘린더 위젯과 설치 안내
 - `sw.js`, `manifest.webmanifest`, `icon*` — 휴대폰 홈 화면 앱·오프라인
 - `test/mock-github.js` — 테스트용 가짜 GitHub 서버
 
@@ -32,3 +34,6 @@ python -m http.server 5180
 ```
 http://localhost:5180 · 가짜 GitHub로 시험: `node test/mock-github.js` 후 `?dev` 붙여 접속,
 설정에 저장소 `me/notes`, 토큰 `test-token`, API `http://127.0.0.1:8787`
+
+위젯 시험: 가짜 GitHub에 데이터가 올라간 상태에서 `node test/widget-harness.mjs large` (또는 medium, small, `large dark`)
+→ `test/out/widget-large.html` 로 그려짐

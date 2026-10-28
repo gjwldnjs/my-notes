@@ -4,6 +4,7 @@ import * as S from './store.js';
 import { state } from './store.js';
 import * as Sync from './sync.js';
 import { suppEl } from './supp.js';
+import { calEl, calGoto } from './calendar.js';
 
 const $ = (s, el = document) => el.querySelector(s);
 const mq = window.matchMedia('(max-width: 760px)');
@@ -64,7 +65,7 @@ function openNote(id, mode) {
 }
 
 // ---------- 열(컬럼) ----------
-const typeIcon = (n) => (n.type === 'folder' ? 'folder' : n.kind === 'supp' ? 'pill' : 'note');
+const typeIcon = (n) => (n.type === 'folder' ? 'folder' : n.kind === 'supp' ? 'pill' : n.kind === 'cal' ? 'cal' : 'note');
 
 function renderColumns() {
   if (renaming) return;
@@ -312,6 +313,7 @@ function renderEditor(reason = 'local') {
       autosize(ta);
     } else paintBody(n);
     ed.supp?.repaint();
+    ed.cal?.repaint();
   }
   paintMeta(n);
 }
@@ -322,7 +324,8 @@ function buildEditor(n) {
   ed.at = n.contentAt;
   ed.pending = !!n.pending;
   ed.supp = null;
-  ed.mode = ui.mode || (n.kind === 'supp' || n.content.trim() ? 'view' : 'edit');
+  ed.cal = null;
+  ed.mode = ui.mode || (n.kind === 'supp' || n.kind === 'cal' || n.content.trim() ? 'view' : 'edit');
   ui.mode = null;
   const title = h('input', {
     class: 'ed-title', value: n.name, placeholder: '제목 없음', 'aria-label': '제목',
@@ -337,6 +340,11 @@ function buildEditor(n) {
   if (n.kind === 'supp' && !n.pending) {
     ed.supp = suppEl(n);
     inner.append(ed.supp, h('h3', { class: 'memo-h' }, '메모'));
+  }
+  if (n.kind === 'cal' && !n.pending) {
+    ed.cal = calEl(n, { openDaily, openSupp });
+    inner.classList.add('wide');
+    inner.append(ed.cal, h('h3', { class: 'memo-h' }, '메모'));
   }
   inner.append(ed.body);
   box.replaceChildren(inner);
@@ -469,7 +477,7 @@ function caretFromPoint(x, y, src) {
 
 function viewEl(n) {
   const art = h('article', { class: 'md' });
-  if (!n.content.trim()) art.append(h('p', { class: 'placeholder' }, n.kind === 'supp' ? '메모가 없어요. 눌러서 쓰세요.' : '비어 있어요. 눌러서 쓰기 시작하세요.'));
+  if (!n.content.trim()) art.append(h('p', { class: 'placeholder' }, n.kind === 'supp' || n.kind === 'cal' ? '메모가 없어요. 눌러서 쓰세요.' : '비어 있어요. 눌러서 쓰기 시작하세요.'));
   else art.innerHTML = renderMd(n.content);
   art.querySelectorAll('input[type=checkbox]').forEach((cb, i) => {
     cb.disabled = false;
@@ -643,7 +651,8 @@ function emptyEl() {
       h('button', { type: 'button', class: 'btn', onclick: () => newNote(fid) }, icon('note'), f ? '이 폴더에 새 메모' : '새 메모'),
       h('button', { type: 'button', class: 'btn', onclick: () => openDaily('work') }, icon('brief'), '오늘 업무일지'),
       h('button', { type: 'button', class: 'btn', onclick: () => openDaily('diary') }, icon('book'), '오늘 일기'),
-      h('button', { type: 'button', class: 'btn', onclick: openSupp }, icon('pill'), '영양제 체크')),
+      h('button', { type: 'button', class: 'btn', onclick: openSupp }, icon('pill'), '영양제 체크'),
+      h('button', { type: 'button', class: 'btn', onclick: () => openCalendar() }, icon('cal'), '캘린더')),
     h('p', { class: 'hint' }, 'Ctrl+K 검색 · Ctrl+E 보기/편집 · Ctrl+S 지금 동기화', h('br'), '항목을 끌어서 순서를 바꾸거나 폴더에 넣을 수 있어요')));
 }
 
@@ -699,6 +708,25 @@ function openSupp() {
     S.setSettings({ suppNote: n.id });
   } else if (S.inTrash(n.id)) S.restore(n.id);
   openNote(n.id, 'view');
+}
+
+// key(YYYY-MM-DD)를 주면 그 날짜를 고른 채로 연다
+function openCalendar(key) {
+  let n = S.get(state.settings.calNote);
+  if (!n || n.type !== 'note') {
+    n = S.create({ type: 'note', kind: 'cal', name: '캘린더', parent: null, data: { events: [] } });
+    S.setSettings({ calNote: n.id });
+  } else if (S.inTrash(n.id)) S.restore(n.id);
+  if (key) calGoto(key);
+  openNote(n.id, 'view');
+}
+
+// 위젯에서 누르면 #cal 또는 #cal=2026-10-28 주소로 들어온다
+function handleHash() {
+  const m = location.hash.match(/^#cal(?:=(\d{4}-\d{2}-\d{2}))?$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  openCalendar(m[1]);
 }
 
 // ---------- 검색 ----------
@@ -777,21 +805,6 @@ function dialog(title, body, wide = false) {
   dlg.className = wide ? 'wide' : '';
   dlg.replaceChildren(h('div', { class: 'dlg-head' }, h('h2', {}, title), iconBtn('x', '닫기', () => dlg.close())), h('div', { class: 'dlg-body' }, body));
   if (!dlg.open) dlg.showModal();
-}
-
-function dateDialog() {
-  const inp = h('input', { type: 'date', class: 'in', value: ymd(new Date()) });
-  const go = (k) => {
-    const [y, m, d] = inp.value.split('-').map(Number);
-    if (!y) return;
-    dlg.close();
-    openDaily(k, new Date(y, m - 1, d));
-  };
-  dialog('날짜로 일지 열기', h('div', { class: 'stack' }, inp,
-    h('div', { class: 'row' },
-      h('button', { type: 'button', class: 'btn primary', onclick: () => go('work') }, icon('brief'), '업무일지'),
-      h('button', { type: 'button', class: 'btn primary', onclick: () => go('diary') }, icon('book'), '일기')),
-    h('p', { class: 'muted small' }, '그 날짜 메모가 있으면 열고, 없으면 새로 만들어요.')));
 }
 
 function moveDialog(n) {
@@ -987,7 +1000,7 @@ async function init() {
 
   $('#btn-work').onclick = () => openDaily('work');
   $('#btn-diary').onclick = () => openDaily('diary');
-  $('#btn-date').onclick = dateDialog;
+  $('#btn-date').onclick = () => openCalendar();
   $('#btn-supp').onclick = openSupp;
   $('#btn-settings').onclick = settingsDialog;
   $('#sync-chip').onclick = () => { const k = Sync.getStatus().kind; if (k === 'off' || k === 'error') settingsDialog(); else Sync.syncNow(); };
@@ -1007,6 +1020,8 @@ async function init() {
   });
 
   render();
+  handleHash();
+  window.addEventListener('hashchange', handleHash);
   Sync.refreshStatus();
   Sync.syncNow();
   setInterval(() => { if (document.visibilityState === 'visible') Sync.syncNow(); }, 60000);
