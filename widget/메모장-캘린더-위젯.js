@@ -1,9 +1,8 @@
 // 내 메모장 — 월별 캘린더 위젯 (아이폰 Scriptable 앱용)
 // 큰 위젯(4×4): 이번 달 달력 + 일정 / 중간 위젯: 다가오는 일정 / 작은 위젯: 오늘
-// 처음 한 번 Scriptable 앱 안에서 실행해서 저장소·토큰·앱 주소를 넣으세요.
+// 처음 한 번 Scriptable 앱 안에서 실행해서, 메모장 앱 설정의 "아이폰 위젯 연결 코드"를 붙여 넣으세요.
 
 const KEY = 'my-notes-widget';
-const API = 'https://api.github.com';
 
 // ---- 공휴일 (앱의 holidays.js와 같은 표) ----
 const HOLIDAYS = {
@@ -74,58 +73,113 @@ function loadCfg() {
   if (!Keychain.contains(KEY)) return null;
   try { return JSON.parse(Keychain.get(KEY)); } catch (e) { return null; }
 }
+// 메모장 앱 → 설정 → "아이폰 위젯 연결 코드"를 붙여 넣는다
+function decodeCode(code) {
+  const s = code.trim();
+  const raw = typeof Data !== 'undefined' && Data.fromBase64String ? Data.fromBase64String(s).toRawString() : decodeURIComponent(escape(atob(s)));
+  const c = JSON.parse(raw);
+  if (!c.uid || !c.refreshToken || !c.projectId) throw new Error('연결 코드가 올바르지 않아요');
+  if (c.appUrl && !c.appUrl.endsWith('/')) c.appUrl += '/';
+  return c;
+}
 async function setup(old) {
   const a = new Alert();
-  a.title = '내 메모장 위젯 설정';
-  a.message = '메모장 앱 설정에 넣은 것과 같은 저장소와 토큰을 넣으세요. 앱 주소는 위젯을 누르면 열릴 주소예요.';
-  a.addTextField('저장소 (아이디/my-notes-data)', old ? `${old.owner}/${old.repo}` : '');
-  a.addSecureTextField('토큰 (github_pat_...)', old ? old.token : '');
-  a.addTextField('앱 주소 (https://아이디.github.io/my-notes/)', old ? old.appUrl : '');
+  a.title = '내 메모장 위젯 연결';
+  a.message = '메모장 앱 → ⚙ 설정 → "아이폰 위젯 연결 코드" → 복사한 코드를 붙여 넣으세요.';
+  a.addTextField('연결 코드', '');
   a.addAction('저장');
   a.addCancelAction('취소');
   if ((await a.present()) === -1) return old;
-  const [owner, repo] = a.textFieldValue(0).trim().replace(/^https?:\/\/github\.com\//, '').split('/');
-  let appUrl = a.textFieldValue(2).trim();
-  if (appUrl && !appUrl.endsWith('/')) appUrl += '/';
-  const cfg = { owner, repo, token: a.textFieldValue(1).trim(), appUrl, apiBase: old && old.apiBase };
-  Keychain.set(KEY, JSON.stringify(cfg));
-  return cfg;
+  try {
+    const cfg = decodeCode(a.textFieldValue(0));
+    Keychain.set(KEY, JSON.stringify(cfg));
+    return cfg;
+  } catch (e) {
+    const b = new Alert();
+    b.title = '연결하지 못했어요';
+    b.message = `${e.message}\n코드를 처음부터 끝까지 다시 복사해 주세요.`;
+    b.addAction('확인');
+    await b.present();
+    return old;
+  }
 }
 
-// ---- GitHub에서 읽기 (실패하면 지난번 저장본) ----
+// ---- Firebase에서 읽기 (실패하면 지난번 저장본) ----
 const fm = FileManager.local();
 const cachePath = fm.joinPath(fm.documentsDirectory(), 'my-notes-widget-cache.json');
 
-async function ghRaw(cfg, path) {
-  const r = new Request(`${cfg.apiBase || API}/repos/${cfg.owner}/${cfg.repo}${path}`);
-  r.headers = { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github.raw+json' };
-  const text = await r.loadString();
-  const code = r.response && r.response.statusCode;
-  if (code && code >= 400) throw new Error(code === 401 ? '토큰이 올바르지 않아요' : code === 404 ? '저장소나 파일을 찾을 수 없어요' : `GitHub 오류 ${code}`);
-  return text;
+async function idToken(cfg) {
+  const base = cfg.emu ? `${cfg.emu.auth}/securetoken.googleapis.com` : 'https://securetoken.googleapis.com';
+  const r = new Request(`${base}/v1/token?key=${cfg.apiKey}`);
+  r.method = 'POST';
+  r.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  r.body = `grant_type=refresh_token&refresh_token=${encodeURIComponent(cfg.refreshToken)}`;
+  const j = await r.loadJSON();
+  if (!j.id_token) throw new Error('연결이 끊겼어요. 앱에서 새 연결 코드를 받아 주세요');
+  return j.id_token;
 }
-function parseData(text) {
-  const m = text.match(/<!-- my-notes-data\n([\s\S]*?)\n-->\s*$/);
-  if (!m) return null;
-  try { return JSON.parse(m[1]); } catch (e) { return null; }
+
+// Firestore 값 → 보통 값
+function val(v) {
+  if (!v) return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(val);
+  if ('mapValue' in v) return fields(v.mapValue.fields || {});
+  if ('timestampValue' in v) return v.timestampValue;
+  return null;
+}
+const fields = (f) => Object.fromEntries(Object.entries(f || {}).map(([k, v]) => [k, val(v)]));
+
+async function fsRequest(cfg, token, path, body) {
+  const root = cfg.emu ? `${cfg.emu.firestore}/v1` : 'https://firestore.googleapis.com/v1';
+  const r = new Request(`${root}/projects/${cfg.projectId}/databases/(default)/documents/users/${cfg.uid}${path}`);
+  r.headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  if (body) { r.method = 'POST'; r.body = JSON.stringify(body); }
+  const j = await r.loadJSON();
+  const code = r.response && r.response.statusCode;
+  if (code === 404) return null;
+  if (code && code >= 400) throw new Error(code === 403 ? '읽을 권한이 없어요. 새 연결 코드를 받아 주세요' : `서버 오류 ${code}`);
+  return j;
 }
 
 async function loadData(cfg) {
   try {
-    const idx = JSON.parse(await ghRaw(cfg, '/contents/_index.json'));
-    const st = idx.settings || {};
+    const token = await idToken(cfg);
+    const sDoc = await fsRequest(cfg, token, '/nodes/__settings');
+    const st = sDoc ? (fields(sDoc.fields).settings || {}) : {};
     const calId = st.calNote || 'seed-cal';
-    const cal = idx.nodes[calId];
+    const workF = st.workFolder || 'seed-work';
+    const diaryF = st.diaryFolder || 'seed-diary';
+    const cal = await fsRequest(cfg, token, `/nodes/${encodeURIComponent(calId)}`);
     let events = [];
-    if (cal && cal.sha && !cal.trashed) events = (parseData(await ghRaw(cfg, `/git/blobs/${cal.sha}`)) || {}).events || [];
-    // 업무일지·일기를 실제로 쓴 날 (템플릿만 있는 날은 시각이 1)
+    if (cal) {
+      const c = fields(cal.fields);
+      if (!c.trashed && c.data) { try { events = JSON.parse(c.data).events || []; } catch (e) {} }
+    }
+    // 이번 달·지난 달 업무일지·일기 중 실제로 쓴 날 (템플릿만 있는 날은 시각이 1)
+    const now = new Date();
+    const months = [now, new Date(now.getFullYear(), now.getMonth() - 1, 1)].map((d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+    const parents = months.flatMap((m) => [`${workF}~${m}`, `${diaryF}~${m}`]);
+    const rows = await fsRequest(cfg, token, ':runQuery', {
+      structuredQuery: {
+        from: [{ collectionId: 'nodes' }],
+        where: { fieldFilter: { field: { fieldPath: 'parent' }, op: 'IN', value: { arrayValue: { values: parents.map((p) => ({ stringValue: p })) } } } },
+        select: { fields: [{ fieldPath: 'id' }, { fieldPath: 'contentAt' }, { fieldPath: 'trashed' }] },
+      },
+    });
     const written = { work: [], diary: [] };
-    for (const n of Object.values(idx.nodes)) {
-      if (n.type !== 'note' || n.trashed || !(n.contentAt > 1)) continue;
+    for (const row of rows || []) {
+      if (!row.document) continue;
+      const n = fields(row.document.fields);
+      if (n.trashed || !(n.contentAt > 1)) continue;
       const m = String(n.id).match(/^(.*)~(\d{4}-\d{2}-\d{2})$/);
       if (!m) continue;
-      if (m[1] === st.workFolder) written.work.push(m[2]);
-      if (m[1] === st.diaryFolder) written.diary.push(m[2]);
+      if (m[1] === workF) written.work.push(m[2]);
+      if (m[1] === diaryF) written.diary.push(m[2]);
     }
     const data = { events, written, at: Date.now() };
     fm.writeString(cachePath, JSON.stringify(data));
@@ -326,7 +380,7 @@ async function main() {
   }
   const w = new ListWidget();
   w.backgroundColor = C.bg;
-  if (!cfg || !cfg.token) {
+  if (!cfg || !cfg.refreshToken) {
     txt(w, 'Scriptable 앱에서 이 스크립트를 한 번 실행해 설정하세요', 12, C.muted);
   } else {
     const { data, offline, error } = await loadData(cfg);

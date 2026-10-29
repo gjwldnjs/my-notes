@@ -52,7 +52,8 @@ export const state = {
   deleted: {}, // 완전히 지운 항목: id → 지운 시각 (다른 기기에도 알리기 위함)
   settings: defaultSettings(),
   settingsAt: 0,
-  sync: { baseCommit: null, dirty: false, editVersion: 0 },
+  // owner: 이 기기 메모의 주인(로그인 계정 uid). pushed: 서버에 올린 항목별 표시. serverAt: 받아 온 마지막 서버 시각
+  sync: { owner: null, pushed: {}, serverAt: 0, dirty: false, editVersion: 0 },
 };
 
 // 처음 쓰는 기기에 만들어 두는 기본 폴더. 고정 id라서 여러 기기에서 만들어도 하나로 합쳐진다.
@@ -83,6 +84,19 @@ export async function load() {
   } else {
     for (const n of seed()) state.nodes[n.id] = n;
   }
+  state.sync.pushed ||= {};
+}
+
+// 로그아웃하거나 다른 계정으로 바꿀 때: 이 기기의 메모를 모두 지우고 처음 상태로
+export async function wipeLocal() {
+  state.nodes = {};
+  for (const n of seed()) state.nodes[n.id] = n;
+  state.deleted = {};
+  state.settings = defaultSettings();
+  state.settingsAt = 0;
+  state.sync = { owner: null, pushed: {}, serverAt: 0, dirty: false, editVersion: 0 };
+  await persist(true);
+  emit('remote');
 }
 
 let saveTimer = null;

@@ -539,3 +539,13 @@ select.in { appearance: auto; }
   .supp-item { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .supp-chip { flex: 1 1 100%; }
 }
+
+/* ---------- 로그인·계정 ---------- */
+.google-btn { width: 100%; height: 44px; font-weight: 600; }
+.g-logo { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; color: #fff; background: conic-gradient(#ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0); }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+.or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.row.between { justify-content: space-between; }
+.acct { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.acct-av { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; flex: none; }
+.code-box { font-family: var(--mono); font-size: 12px; word-break: break-all; resize: none; }

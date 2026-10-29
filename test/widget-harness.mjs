@@ -1,6 +1,7 @@
 // 아이폰 없이 위젯 스크립트를 시험하는 도구.
 // Scriptable의 위젯 함수들을 흉내 내서 스크립트를 실행하고, 결과를 test/out/widget-<크기>.html 로 그린다.
-// 실행: node test/widget-harness.mjs [large|medium|small] [dark]
+// 실행: WIDGET_CODE=<연결 코드> node test/widget-harness.mjs [large|medium|small] [dark]
+//      (에뮬레이터를 켜고, 앱을 ?emu 로 열어 로그인한 뒤 설정에서 코드를 받는다)
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -66,17 +67,21 @@ Object.assign(globalThis, {
     }),
   },
   Request: class {
-    constructor(url) { this.url = url; this.headers = {}; }
+    constructor(url) { this.url = url; this.headers = {}; this.method = 'GET'; this.body = undefined; }
     async loadString() {
-      const r = await fetch(this.url, { headers: this.headers });
+      const r = await fetch(this.url, { method: this.method, headers: this.headers, body: this.body });
       this.response = { statusCode: r.status };
       return r.text();
     }
+    async loadJSON() { const t = await this.loadString(); try { return JSON.parse(t); } catch { return {}; } }
   },
+  Data: { fromBase64String: (s) => ({ toRawString: () => Buffer.from(s, 'base64').toString('utf8') }) },
   Script: { setWidget: (w) => { result = w; }, complete: () => {} },
   Alert: class { },
 });
-store['my-notes-widget'] = JSON.stringify({ owner: 'me', repo: 'notes', token: 'test-token', appUrl: 'https://example.github.io/my-notes/', apiBase: 'http://127.0.0.1:8787' });
+// 앱(에뮬레이터 모드) 설정의 "아이폰 위젯 연결 코드"를 WIDGET_CODE 환경변수로 넘긴다
+if (!process.env.WIDGET_CODE) throw new Error('WIDGET_CODE 환경변수에 위젯 연결 코드를 넣어 주세요');
+store['my-notes-widget'] = Buffer.from(process.env.WIDGET_CODE, 'base64').toString('utf8');
 
 const code = fs.readFileSync(path.join(here, '..', 'widget', '메모장-캘린더-위젯.js'), 'utf8');
 const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;

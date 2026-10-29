@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild editor.js --bundle --format=esm --minify --target=es2020 --outfile=../vendor/editor.js"
+    "build:editor": "esbuild editor.js --bundle --format=esm --minify --target=es2020 --outfile=../vendor/editor.js",
+    "build:firebase": "esbuild firebase.js --bundle --format=esm --minify --target=es2020 --outfile=../vendor/firebase.js",
+    "build": "npm run build:editor && npm run build:firebase"
   },
   "dependencies": {
     "@tiptap/core": "^2.27.3",
@@ -19,6 +21,7 @@
     "@tiptap/starter-kit": "^2.27.3",
     "@tiptap/suggestion": "^2.27.3",
     "esbuild": "^0.24.2",
+    "firebase": "^11.10.0",
     "tiptap-markdown": "^0.8.10"
   }
 }

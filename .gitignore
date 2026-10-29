@@ -1,2 +1,3 @@
 test/out/
 editor-src/node_modules/
+*-debug.log

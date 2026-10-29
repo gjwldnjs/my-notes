@@ -2,7 +2,7 @@
 import { h, icon, iconBtn, esc, pad, WD, ymd, fmtTime, toast } from './dom.js';
 import * as S from './store.js';
 import { state } from './store.js';
-import * as Sync from './sync.js';
+import * as Cloud from './cloud.js';
 import { suppEl } from './supp.js';
 import { calEl, calGoto } from './calendar.js';
 import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
@@ -637,65 +637,96 @@ function trashDialog() {
   dialog('휴지통', body, true);
 }
 
-function settingsDialog() {
-  const cfg = Sync.getConfig() || {};
-  const dev = new URLSearchParams(location.search).has('dev');
-  const repo = h('input', { class: 'in', placeholder: '아이디/저장소이름  (예: myid/my-notes-data)', value: cfg.owner ? `${cfg.owner}/${cfg.repo}` : '', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off' });
-  const token = h('input', { class: 'in', type: 'password', placeholder: cfg.token ? '저장돼 있어요 (바꿀 때만 새로 입력)' : 'github_pat_ 로 시작하는 토큰', autocomplete: 'off' });
-  const api = dev ? h('input', { class: 'in', placeholder: 'API 주소 (개발용)', value: cfg.apiBase || '' }) : null;
-  const st = Sync.getStatus();
-  const msg = h('p', { class: `small ${st.kind === 'error' ? 'err' : 'muted'}` },
-    !cfg.token ? '아직 연결 안 됨 · 이 기기에만 저장되고 있어요.' : st.kind === 'error' ? st.msg : `연결됨 · ${cfg.owner}/${cfg.repo}`);
-
-  const connect = async () => {
-    const parts = repo.value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '').split('/');
-    if (parts.length !== 2 || !parts[0] || !parts[1]) { msg.textContent = '저장소를 "아이디/저장소이름" 형태로 적어 주세요.'; msg.className = 'small err'; return; }
-    const next = { owner: parts[0], repo: parts[1], token: token.value.trim() || cfg.token, apiBase: api?.value.trim() || cfg.apiBase || undefined };
-    if (!next.token) { msg.textContent = '토큰을 넣어 주세요.'; msg.className = 'small err'; return; }
-    msg.textContent = '확인하는 중…';
-    msg.className = 'small muted';
-    try {
-      const r = await Sync.testConfig(next);
-      if (next.owner !== cfg.owner || next.repo !== cfg.repo || next.apiBase !== cfg.apiBase) {
-        for (const n of Object.values(state.nodes)) delete n.sha; // 다른 저장소 → 처음부터 올림
-        state.sync.baseCommit = null;
-        state.sync.dirty = true;
-        S.persist(true);
-      }
-      Sync.setConfig(next);
-      token.value = '';
-      msg.textContent = '연결됐어요. 동기화를 시작해요.' + (r.warn ? `  ⚠ ${r.warn}` : '');
-      msg.className = `small ${r.warn ? 'warn' : 'ok'}`;
-      await Sync.syncNow();
-      const s2 = Sync.getStatus();
-      if (s2.kind === 'error') { msg.textContent = s2.msg; msg.className = 'small err'; }
-      else if (!r.warn) msg.textContent = '연결됐어요. 이제 이 기기 내용이 GitHub에 저장돼요.';
-    } catch (e) {
-      msg.textContent = e.message;
-      msg.className = 'small err';
-    }
+// 로그인 화면: Google 또는 이메일. 로그인 없이 이 기기에서만 쓸 수도 있다.
+function loginDialog({ first = false } = {}) {
+  if (!Cloud.isReady()) { toast('아직 로그인 서버가 준비되지 않았어요'); return; }
+  let mode = 'in'; // in: 로그인, up: 가입
+  const email = h('input', { class: 'in', type: 'email', placeholder: '이메일', autocomplete: 'email', autocapitalize: 'off' });
+  const pw = h('input', { class: 'in', type: 'password', placeholder: '비밀번호 (6자 이상)', autocomplete: 'current-password' });
+  const msg = h('p', { class: 'small muted' });
+  const say = (t, cls = 'err') => { msg.textContent = t; msg.className = `small ${cls}`; };
+  const done = () => { try { localStorage.setItem('welcomed', '1'); } catch {} dlg.close(); };
+  const run = async (fn) => {
+    say('확인하는 중…', 'muted');
+    try { await fn(); done(); toast('로그인했어요'); } catch (e) { console.error(e); say(Cloud.authError(e)); }
   };
+  const submitBtn = h('button', { type: 'button', class: 'btn primary', onclick: () => {
+    const e = email.value.trim(), p = pw.value;
+    if (!e || !p) { say('이메일과 비밀번호를 넣어 주세요.'); return; }
+    run(() => (mode === 'up' ? Cloud.signUpEmail(e, p) : Cloud.signInEmail(e, p)));
+  } }, '이메일로 로그인');
+  const switchBtn = h('button', { type: 'button', class: 'link-btn', onclick: () => {
+    mode = mode === 'in' ? 'up' : 'in';
+    submitBtn.textContent = mode === 'up' ? '이메일로 가입하기' : '이메일로 로그인';
+    switchBtn.textContent = mode === 'up' ? '이미 가입했어요 → 로그인' : '처음이에요 → 이메일로 가입';
+    pw.autocomplete = mode === 'up' ? 'new-password' : 'current-password';
+    say('', 'muted');
+  } }, '처음이에요 → 이메일로 가입');
+  const resetBtn = h('button', { type: 'button', class: 'link-btn', onclick: async () => {
+    const e = email.value.trim();
+    if (!e) { say('비밀번호를 다시 정할 이메일을 위 칸에 넣어 주세요.'); return; }
+    try { await Cloud.resetPassword(e); say('비밀번호 재설정 메일을 보냈어요. 메일함을 확인해 주세요.', 'ok'); } catch (err) { say(Cloud.authError(err)); }
+  } }, '비밀번호를 잊었어요');
+  pw.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) submitBtn.click(); });
+
+  dialog(first ? '내 메모장에 오신 걸 환영해요' : '로그인', h('div', { class: 'stack' },
+    h('p', { class: 'small muted' }, '로그인하면 휴대폰·PC 어디서나 같은 메모를 써요. 다른 사람은 내 메모를 볼 수 없어요.'),
+    h('button', { type: 'button', class: 'btn google-btn', onclick: () => run(() => Cloud.signInGoogle()) },
+      h('span', { class: 'g-logo', 'aria-hidden': 'true' }, 'G'), 'Google로 계속하기'),
+    h('div', { class: 'or' }, h('span', {}, '또는')),
+    email, pw, submitBtn,
+    h('div', { class: 'row between' }, switchBtn, resetBtn),
+    msg,
+    h('details', { class: 'help' },
+      h('summary', {}, '내 메모는 어디에 저장되나요?'),
+      h('p', { class: 'small muted' }, '이 기기 안과, 구글의 Firebase 서버(서울)에 저장돼요. 계정마다 칸이 나뉘어 있어서 다른 사용자는 볼 수 없어요. 다만 이 앱 운영자는 관리 화면에서 데이터에 접근할 수 있는 권한이 있어요. 아이폰 홈 화면 앱에서 Google 로그인 창이 잘 안 열리면 이메일로 가입해 주세요.')),
+    first ? h('button', { type: 'button', class: 'link-btn', onclick: done }, '로그인 없이 이 기기에서만 쓰기') : null,
+  ));
+}
+
+function settingsDialog() {
+  const u = Cloud.currentUser();
+  const st = Cloud.getStatus();
+  let account;
+  if (!Cloud.isReady()) {
+    account = h('p', { class: 'small muted' }, '로그인 서버를 준비하는 중이에요. 지금은 이 기기에만 저장돼요.');
+  } else if (!u) {
+    account = h('div', { class: 'stack' },
+      h('p', { class: 'small muted' }, '로그인하지 않아서 이 기기에만 저장되고 있어요. 로그인하면 지금 메모가 내 계정으로 올라가고, 다른 기기에서도 볼 수 있어요.'),
+      h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => loginDialog() }, '로그인 / 가입')));
+  } else {
+    const left = Cloud.unpushedCount();
+    account = h('div', { class: 'stack' },
+      h('div', { class: 'acct' },
+        h('div', { class: 'acct-av' }, (u.displayName || u.email || '?').slice(0, 1).toUpperCase()),
+        h('div', { class: 'grow' },
+          h('div', { class: 'ellip' }, u.displayName || u.email),
+          h('div', { class: 'small muted ellip' }, u.displayName ? u.email : '이메일 로그인'))),
+      h('p', { class: `small ${st.kind === 'error' ? 'err' : 'muted'}` },
+        st.kind === 'error' ? st.msg : left ? `아직 올라가지 않은 항목 ${left}개` : '모든 메모가 저장돼 있어요.'),
+      h('div', { class: 'row' },
+        h('button', { type: 'button', class: 'btn', onclick: () => { Cloud.syncNow(); toast('지금 저장할게요'); } }, icon('sync'), '지금 저장'),
+        h('button', { type: 'button', class: 'btn', onclick: widgetDialog }, '아이폰 위젯 연결 코드'),
+        h('button', { type: 'button', class: 'btn danger', onclick: async () => {
+          const n = Cloud.unpushedCount();
+          if (!confirm(n
+            ? `아직 서버에 안 올라간 항목이 ${n}개 있어요. 지금 올려 보고 로그아웃할까요?\n(인터넷이 안 되면 그 항목은 사라져요)`
+            : '로그아웃할까요?\n이 기기에서는 메모가 지워지고, 다시 로그인하면 돌아와요.')) return;
+          ed.flush?.();
+          closeEditor();
+          const lost = await Cloud.logout();
+          ui.path = []; ui.note = null; ed.id = null;
+          render();
+          dlg.close();
+          toast(lost ? `로그아웃했어요. 올리지 못한 항목 ${lost}개가 있었어요.` : '로그아웃했어요');
+        } }, '로그아웃')));
+  }
 
   const tplWork = h('textarea', { class: 'in', rows: 6, value: state.settings.workTemplate, onchange: (e) => S.setSettings({ workTemplate: e.target.value }) });
   const tplDiary = h('textarea', { class: 'in', rows: 6, value: state.settings.diaryTemplate, onchange: (e) => S.setSettings({ diaryTemplate: e.target.value }) });
 
   dialog('설정', h('div', {},
-    h('section', {},
-      h('h3', { class: 'sec-h' }, 'GitHub에 저장 (휴대폰·PC 같이 쓰기)'),
-      h('div', { class: 'stack' }, repo, token, api, msg,
-        h('div', { class: 'row' },
-          h('button', { type: 'button', class: 'btn primary', onclick: connect }, icon('sync'), cfg.token ? '저장하고 동기화' : '연결하기'),
-          cfg.token ? h('button', { type: 'button', class: 'btn', onclick: () => { if (confirm('이 기기에서 GitHub 연결을 끊을까요? 메모는 이 기기에 그대로 남아요.')) { Sync.setConfig(null); Sync.refreshStatus(); dlg.close(); } } }, '연결 끊기') : null),
-        h('details', { class: 'help', open: cfg.token ? null : true },
-          h('summary', {}, '처음 한 번 준비하기 (5분)'),
-          h('ol', {},
-            h('li', {}, 'github.com 로그인 → 오른쪽 위 ＋ → ', h('b', {}, 'New repository'), ' → 이름 ', h('code', {}, 'my-notes-data'), ', ', h('b', {}, 'Private'), ' 선택 → Create'),
-            h('li', {}, '프로필 사진 → Settings → 맨 아래 Developer settings → Personal access tokens → ', h('b', {}, 'Fine-grained tokens'), ' → Generate new token'),
-            h('li', {}, 'Repository access: ', h('b', {}, 'Only select repositories'), ' → my-notes-data 선택'),
-            h('li', {}, 'Permissions → Repository permissions → ', h('b', {}, 'Contents: Read and write')),
-            h('li', {}, '만료일을 정하고 Generate → 나온 토큰을 복사해 위 칸에 붙여넣기'),
-            h('li', {}, '휴대폰에서도 이 앱을 열고 같은 저장소·토큰을 한 번 넣으면 끝')),
-          h('p', { class: 'small muted' }, '토큰은 이 기기 브라우저에만 저장되고 저장소에는 올라가지 않아요. 만료되면 새로 만들어 다시 넣으면 돼요.')))),
+    h('section', {}, h('h3', { class: 'sec-h' }, '계정'), account),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '보기'),
       h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: state.settings.showNumbers, onchange: (e) => S.setSettings({ showNumbers: e.target.checked }) }), '목록에 번호(1. 2. 3.) 붙이기')),
@@ -710,6 +741,21 @@ function settingsDialog() {
         h('button', { type: 'button', class: 'btn', onclick: exportBackup }, '백업 파일 받기'),
         h('button', { type: 'button', class: 'btn', onclick: importBackup }, '백업에서 복원'))),
   ), true);
+}
+
+// 아이폰 위젯에 붙여 넣을 연결 코드
+function widgetDialog() {
+  const appUrl = location.origin + location.pathname.replace(/index\.html$/, '');
+  const code = Cloud.widgetCode(appUrl);
+  if (!code) { toast('먼저 로그인해 주세요'); return; }
+  const box = h('textarea', { class: 'in code-box', rows: 4, readonly: true, value: code });
+  dialog('아이폰 위젯 연결 코드', h('div', { class: 'stack' },
+    h('p', { class: 'small muted' }, 'Scriptable 위젯을 처음 실행할 때 이 코드를 붙여 넣으면, 위젯이 내 캘린더를 읽을 수 있어요.'),
+    box,
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
+      try { await navigator.clipboard.writeText(code); toast('복사했어요'); } catch { box.select(); toast('코드를 길게 눌러 복사해 주세요'); }
+    } }, '복사하기')),
+    h('p', { class: 'small warn' }, '이 코드가 있으면 내 메모를 읽을 수 있어요. 다른 사람에게 보내거나 채팅에 붙여 넣지 마세요. 위젯을 다시 설정할 때는 여기서 새 코드를 받으면 돼요.')));
 }
 
 function exportBackup() {
@@ -768,13 +814,13 @@ $('#m-back').addEventListener('click', () => { if (histDepth > 0) history.back()
 function paintSync(st) {
   const chip = $('#sync-chip');
   const map = {
-    off: ['cloudOff', '이 기기에만'], pending: ['sync', '저장 대기'], syncing: ['sync', '동기화 중'],
-    ok: ['check', '동기화됨'], error: ['alert', '동기화 오류'], offline: ['cloudOff', '오프라인'],
+    off: ['cloudOff', Cloud.isReady() ? '로그인' : '이 기기에만'], pending: ['sync', '저장 대기'], syncing: ['sync', '저장 중'],
+    ok: ['check', '저장됨'], error: ['alert', '저장 오류'], offline: ['cloudOff', '오프라인'],
   };
   const [ic, label] = map[st.kind] || map.off;
   chip.className = `sync-chip k-${st.kind}`;
   chip.replaceChildren(icon(ic), h('span', { class: 'lbl' }, label));
-  chip.title = st.msg || (st.kind === 'off' ? '설정에서 GitHub를 연결하면 휴대폰과 같이 쓸 수 있어요' : st.kind === 'ok' ? `${label} · ${fmtTime(st.at)} · 누르면 지금 동기화` : label);
+  chip.title = st.msg || (st.kind === 'off' ? '로그인하면 휴대폰·PC에서 같은 메모를 써요' : st.kind === 'ok' ? `모든 메모가 저장됐어요 · ${fmtTime(st.at)}` : label);
 }
 
 async function init() {
@@ -789,16 +835,20 @@ async function init() {
     renderMobile();
     if (!res.hidden && document.activeElement === q) renderResults();
   });
-  let syncT;
-  S.setOnDirty(() => { Sync.markPending(); clearTimeout(syncT); syncT = setTimeout(Sync.syncNow, 5000); });
-  Sync.onSyncStatus(paintSync);
+  S.setOnDirty(() => Cloud.schedulePush());
+  Cloud.onSyncStatus(paintSync);
 
   $('#btn-work').onclick = () => openDaily('work');
   $('#btn-diary').onclick = () => openDaily('diary');
   $('#btn-date').onclick = () => openCalendar();
   $('#btn-supp').onclick = openSupp;
   $('#btn-settings').onclick = settingsDialog;
-  $('#sync-chip').onclick = () => { const k = Sync.getStatus().kind; if (k === 'off' || k === 'error') settingsDialog(); else Sync.syncNow(); };
+  $('#sync-chip').onclick = () => {
+    const k = Cloud.getStatus().kind;
+    if (k === 'off' && Cloud.isReady()) loginDialog();
+    else if (k === 'off' || k === 'error') settingsDialog();
+    else Cloud.syncNow();
+  };
 
   document.addEventListener('pointerdown', (e) => {
     if (!$('#menu').hidden && !e.target.closest('#menu')) closeMenu();
@@ -808,7 +858,7 @@ async function init() {
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     if (mod && k === 'k') { e.preventDefault(); q.focus(); q.select(); }
-    else if (mod && k === 's') { e.preventDefault(); ed.flush?.(); S.persist(true); Sync.syncNow(); toast(Sync.configured() ? '동기화할게요' : '이 기기에 저장돼 있어요'); }
+    else if (mod && k === 's') { e.preventDefault(); ed.flush?.(); S.persist(true); Cloud.syncNow(); toast(Cloud.currentUser() ? '지금 저장할게요' : '이 기기에 저장돼 있어요'); }
     else if (mod && e.key === '\\' && !isMobile()) { e.preventDefault(); toggleFocus(); }
     else if (e.key === 'Escape') closeMenu();
   });
@@ -816,16 +866,16 @@ async function init() {
   render();
   handleHash();
   window.addEventListener('hashchange', handleHash);
-  Sync.refreshStatus();
-  Sync.syncNow();
-  setInterval(() => { if (document.visibilityState === 'visible') Sync.syncNow(); }, 60000);
+  Cloud.start();
+  // 처음 온 사람에게는 로그인 화면을 한 번 보여 준다
+  let welcomed = false;
+  try { welcomed = !!localStorage.getItem('welcomed'); } catch {}
+  if (Cloud.isReady() && !welcomed) setTimeout(() => { if (!Cloud.currentUser() && !dlg.open) loginDialog({ first: true }); }, 1200);
+  Cloud.onUser((u) => { if (u) { try { localStorage.setItem('welcomed', '1'); } catch {} } });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') Sync.syncNow();
-    else { ed.flush?.(); S.persist(true); if (state.sync.dirty) Sync.syncNow(); }
+    if (document.visibilityState === 'hidden') { ed.flush?.(); S.persist(true); Cloud.syncNow(); }
   });
   window.addEventListener('pagehide', () => { ed.flush?.(); S.persist(true); });
-  window.addEventListener('online', () => Sync.syncNow());
-  window.addEventListener('offline', () => Sync.refreshStatus());
   mq.addEventListener('change', render);
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
