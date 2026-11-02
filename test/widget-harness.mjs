@@ -92,7 +92,8 @@ if (!result) throw new Error('위젯이 만들어지지 않음');
 const SIZES = { large: [338, 354], medium: [338, 158], small: [158, 158] };
 let texts = 0, links = 0;
 function html(n) {
-  if (n.kind === 'spacer') return n.n == null ? '<div style="flex:1 1 0"></div>' : `<div style="flex:none;width:${n.n}px;height:${n.n}px"></div>`;
+  // 아이폰(SwiftUI)은 늘어나는 빈칸에도 최소 8pt를 준다 → 좁은 칸에서 글자가 밀려 사라지는 걸 똑같이 재현
+  if (n.kind === 'spacer') return n.n == null ? '<div style="flex:1 1 0;min-width:8px;min-height:8px"></div>' : `<div style="flex:none;width:${n.n}px;height:${n.n}px"></div>`;
   if (n.kind === 'text') {
     texts++;
     return `<div style="font-size:${n.font?.s || 13}px;font-weight:${n.font?.bold ? 700 : 400};color:${n.textColor?.css() || '#000'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:${n.align};min-width:0;line-height:1.15">${String(n.text).replace(/</g, '&lt;')}</div>`;

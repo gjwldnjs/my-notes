@@ -232,7 +232,9 @@ function buildLarge(w, data, cfg, note) {
   const weeks = Math.ceil((first.getDay() + days) / 7);
   const cw = Math.floor((W - P * 2) / 7);
   const headH = 22, wdH = 14;
-  const rowH = Math.floor((H - P * 2 - headH - wdH - 4) / weeks);
+  const NUM = 18; // 날짜 숫자 칸(오늘 동그라미) 크기
+  // 실제 위젯 크기가 표와 몇 pt 달라도 넘치지 않게 6pt 여유
+  const rowH = Math.floor((H - 6 - P * 2 - headH - wdH - 4) / weeks);
   const maxEv = rowH >= 54 ? 3 : 2;
   const work = new Set(data.written.work), diary = new Set(data.written.diary);
 
@@ -272,14 +274,17 @@ function buildLarge(w, data, cfg, note) {
 
       // 날짜 숫자 + 쓴 날 점
       const top = cell.addStack();
-      top.size = new Size(cw - 2, 15);
+      top.size = new Size(cw - 2, NUM);
       top.centerAlignContent();
       const num = top.addStack();
-      num.size = new Size(15, 15);
+      num.size = new Size(NUM, NUM);
       num.centerAlignContent();
-      if (key === today) { num.backgroundColor = C.accent; num.cornerRadius = 7.5; }
+      // 좁은 칸에서는 늘어나는 빈칸(addSpacer)이 최소 너비를 먹어 숫자가 사라진다 → 자릿수로 왼쪽 여백을 계산해 가운데 맞춤
+      const digits = String(d.getDate()).length;
+      num.setPadding(0, Math.max(0, (NUM - digits * 6.2) / 2), 0, 0);
+      if (key === today) { num.backgroundColor = C.accent; num.cornerRadius = NUM / 2; }
       const color = key === today ? C.accentInk : !inMonth ? C.faint : (c === 0 || hol) ? C.sun : c === 6 ? C.sat : C.text;
-      centered(num, d.getDate(), 9.5, color, { bold: true, align: 'center' });
+      txt(num, d.getDate(), 10, color, { bold: true });
       if (inMonth && (work.has(key) || diary.has(key))) {
         top.addSpacer(2);
         const dot = top.addStack();
