@@ -751,7 +751,7 @@ function widgetDialog() {
   const box = h('textarea', { class: 'in code-box', rows: 4, readonly: true, value: code });
   // 아이폰 사파리는 버튼을 누른 그 순간에만 복사를 허락해서, 스크립트는 미리 받아 둔다
   let script = '';
-  fetch(encodeURI('widget/메모장-캘린더-위젯.js')).then((r) => r.text()).then((t) => { script = t; }).catch(() => {});
+  fetch(encodeURI('widget/메모장-캘린더-위젯.js') + '?v=' + Date.now(), { cache: 'no-store' }).then((r) => r.text()).then((t) => { script = t; }).catch(() => {});
   const copy = async (text, what, fallback) => {
     try { await navigator.clipboard.writeText(text); toast(`${what}를 복사했어요`); } catch { fallback?.(); toast('복사가 막혔어요. 길게 눌러 복사해 주세요'); }
   };
