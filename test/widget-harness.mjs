@@ -104,6 +104,8 @@ function html(n) {
   if (n.url) links++;
   const st = [
     'display:flex', `flex-direction:${n.dir}`, `align-items:${n.dir === 'row' ? n.align : 'stretch'}`,
+    // 크기를 정한 묶음은 iOS(SwiftUI frame)처럼 내용을 가운데에 놓는다
+    (n.dir === 'row' ? n.size?.width > 0 : n.size?.height > 0) ? 'justify-content:center' : '',
     `padding:${n.pad.map((p) => p + 'px').join(' ')}`, 'box-sizing:border-box', 'min-width:0', 'overflow:hidden', 'flex:none',
     n.size && n.size.width > 0 ? `width:${n.size.width}px` : '', n.size && n.size.height > 0 ? `height:${n.size.height}px` : '',
     n.backgroundColor ? `background:${n.backgroundColor.css()}` : '',

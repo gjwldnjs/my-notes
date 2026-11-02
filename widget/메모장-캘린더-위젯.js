@@ -291,13 +291,11 @@ function buildLarge(w, data, cfg, note) {
       const top = cell.addStack();
       top.size = new Size(cw - 2, NUM);
       top.centerAlignContent();
-      top.setPadding(0, Math.max(0, (cw - 2 - (NUM + 12)) / 2), 0, 0);
+      // 크기를 정한 가로 묶음은 내용이 좁으면 iOS가 가운데에 놓는다 → 여백 계산 없이 양쪽 6pt 상자만 두면 숫자가 정확히 가운데
       const padL = top.addStack(); padL.size = new Size(6, NUM);
       const num = top.addStack();
       num.size = new Size(NUM, NUM);
       num.centerAlignContent();
-      const digits = String(d.getDate()).length;
-      num.setPadding(0, Math.max(0, (NUM - digits * 7.4) / 2), 0, 0);
       if (key === today) { num.backgroundColor = C.accent; num.cornerRadius = NUM / 2; }
       const color = key === today ? C.accentInk : !inMonth ? C.faint : (c === 0 || hol) ? C.sun : c === 6 ? C.sat : C.text;
       txt(num, d.getDate(), 12.5, color, { bold: true });
@@ -331,6 +329,9 @@ function buildLarge(w, data, cfg, note) {
           b.addSpacer(2);
           const t = txt(b, it.title, 9.5, it.color ? C.text : C.sun);
           t.minimumScaleFactor = 0.8;
+          // 짧은 제목은 iOS가 칩 가운데로 보내므로 뒤에 빈칸을 두어 왼쪽에 붙인다 (긴 제목은 어차피 꽉 차서 그대로)
+          const est = [...String(it.title)].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 9.5 : 5.3), 0);
+          if (est < cw - 2 - 4 - 8) b.addSpacer();
         } else if (i === shown && items.length > maxEv) {
           b.addSpacer(4);
           txt(b, `+${items.length - shown}`, 9, C.muted);
