@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const family = process.argv[2] || 'large';
 const dark = process.argv[3] === 'dark';
-const SCREEN = { width: 393, height: 852 }; // iPhone 15 Pro
+const SCREEN = { width: Number(process.env.SCREEN_W) || 402, height: 874 }; // 기본: iPhone 16 Pro (사용자 폰)
 
 class Size { constructor(w, h) { this.width = w; this.height = h; } }
 class Color {
@@ -45,6 +45,8 @@ class ListWidget extends WStack {
 }
 
 const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'scriptable-'));
+// WIDGET_CACHE=<json 파일>: 서버 없이 그려 보기 (지난번 저장본이 있는 오프라인 상황과 같음)
+if (process.env.WIDGET_CACHE) fs.copyFileSync(process.env.WIDGET_CACHE, path.join(docs, 'my-notes-widget-cache.json'));
 const store = {};
 let result = null;
 Object.assign(globalThis, {
@@ -89,7 +91,8 @@ await new AsyncFunction(code)();
 if (!result) throw new Error('위젯이 만들어지지 않음');
 
 // ---- HTML로 그리기 ----
-const SIZES = { large: [338, 354], medium: [338, 158], small: [158, 158] };
+const big = (Number(process.env.SCREEN_W) || 402) >= 402 ? [364, 382] : [338, 354];
+const SIZES = { large: big, medium: [big[0], 170], small: [170, 170] };
 let texts = 0, links = 0;
 function html(n) {
   // 아이폰(SwiftUI)은 늘어나는 빈칸에도 최소 8pt를 준다 → 좁은 칸에서 글자가 밀려 사라지는 걸 똑같이 재현
@@ -102,7 +105,7 @@ function html(n) {
   const st = [
     'display:flex', `flex-direction:${n.dir}`, `align-items:${n.dir === 'row' ? n.align : 'stretch'}`,
     `padding:${n.pad.map((p) => p + 'px').join(' ')}`, 'box-sizing:border-box', 'min-width:0', 'overflow:hidden', 'flex:none',
-    n.size ? `width:${n.size.width}px;height:${n.size.height}px` : '',
+    n.size && n.size.width > 0 ? `width:${n.size.width}px` : '', n.size && n.size.height > 0 ? `height:${n.size.height}px` : '',
     n.backgroundColor ? `background:${n.backgroundColor.css()}` : '',
     n.cornerRadius ? `border-radius:${n.cornerRadius}px` : '',
   ].filter(Boolean).join(';');

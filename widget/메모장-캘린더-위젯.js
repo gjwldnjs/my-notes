@@ -25,6 +25,7 @@ const C = {
   text: dyn('#24221e', '#ebe9e4'),
   muted: dyn('#8d887d', '#8f8a80'),
   faint: dyn('#c9c4b8', '#4a4740'),
+  line: dyn('#e7e3da', '#3a3835'),
   sun: dyn('#c4473b', '#ea8a7f'),
   sat: dyn('#3b6fc2', '#7fa6e8'),
   accent: dyn('#2f6f5e', '#7cc0a7'),
@@ -191,14 +192,16 @@ async function loadData(cfg) {
 }
 
 // ---- 위젯 크기 (아이폰 화면별 큰 위젯 크기, 포인트) ----
+// 화면 폭(pt) → 큰 위젯 [가로, 세로]. 표에 없는 폰이면 가장 가까운 값을 쓰고, 남는 자리는 빈칸이 흡수한다.
 function largeSize() {
   const s = Device.screenSize();
   const w = Math.min(s.width, s.height), h = Math.max(s.width, s.height);
-  if (w >= 428) return [364, 382];
-  if (w >= 414) return [360, 379];
-  if (w >= 390) return [338, 354];
-  if (w >= 375 && h >= 800) return [329, 345];
-  if (w >= 375) return [321, 324];
+  if (w >= 428) return [364, 382]; // Pro Max, Plus
+  if (w >= 414) return [360, 379]; // 11, XR, 11 Pro Max
+  if (w >= 402) return [364, 382]; // 16 Pro, 17 Pro
+  if (w >= 390) return [338, 354]; // 12~16 기본, 14 Pro, 15 Pro
+  if (w >= 375 && h >= 800) return [329, 345]; // X, 11 Pro, mini
+  if (w >= 375) return [321, 324]; // SE, 8
   return [292, 311];
 }
 
@@ -211,7 +214,7 @@ function txt(stack, s, size, color, { bold = false, align } = {}) {
   if (align === 'center') t.centerAlignText();
   return t;
 }
-// Scriptable 가로 상자 안에서 가운데 두기: 양옆에 빈칸
+// 가로 상자 안에서 가운데 두기: 양옆에 늘어나는 빈칸. 아이폰은 빈칸에도 최소 8pt를 주므로 폭 30pt 이상인 상자에서만 쓸 것
 function centered(stack, s, size, color, opt) {
   stack.addSpacer();
   const t = txt(stack, s, size, color, opt);
@@ -219,98 +222,124 @@ function centered(stack, s, size, color, opt) {
   return t;
 }
 
-// ---- 큰 위젯: 이번 달 달력 ----
+// ---- 큰 위젯: 이번 달 달력 (네이버 캘린더 위젯과 비슷한 짜임) ----
 function buildLarge(w, data, cfg, note) {
   const [W, H] = largeSize();
-  const P = 12;
+  const P = 9;
   w.setPadding(P, P, P, P);
+  const IW = W - P * 2; // 안쪽 폭
   const now = new Date();
   const today = ymd(now);
   const y = now.getFullYear(), m = now.getMonth() + 1;
   const first = new Date(y, m - 1, 1);
   const days = new Date(y, m, 0).getDate();
   const weeks = Math.ceil((first.getDay() + days) / 7);
-  const cw = Math.floor((W - P * 2) / 7);
-  const headH = 22, wdH = 14;
-  const NUM = 18; // 날짜 숫자 칸(오늘 동그라미) 크기
-  // 실제 위젯 크기가 표와 몇 pt 달라도 넘치지 않게 6pt 여유
-  const rowH = Math.floor((H - 6 - P * 2 - headH - wdH - 4) / weeks);
-  const maxEv = rowH >= 54 ? 3 : 2;
+  const cw = Math.floor(IW / 7);
+  const NUM = 22; // 날짜 숫자 줄 높이 (오늘 동그라미 지름)
+  const CHIP = 13, GAP = 2; // 일정 칩 높이·간격
+  const headH = 24, wdH = 16;
+  // 한 주에 들어갈 일정 줄 수: 남는 높이로 계산 (2~3줄)
+  const rowSpace = (H - P * 2 - headH - wdH - 6) / weeks;
+  const maxEv = Math.max(2, Math.min(3, Math.floor((rowSpace - NUM - 10) / (CHIP + GAP))));
   const work = new Set(data.written.work), diary = new Set(data.written.diary);
 
+  // 머리: 가운데 "2026. 11."  오른쪽 끝에 상태
   const head = w.addStack();
-  head.size = new Size(W - P * 2, headH);
+  head.size = new Size(IW, headH);
   head.centerAlignContent();
-  txt(head, `${m}월`, 17, C.text, { bold: true });
-  head.addSpacer(6);
-  txt(head, `${y}`, 12, C.muted);
+  head.addSpacer();
+  txt(head, `${y}. ${m}.`, 16, C.text, { bold: true });
   head.addSpacer();
   if (note) txt(head, note, 9, C.muted);
+  w.addSpacer(2);
 
+  // 요일
   const wd = w.addStack();
-  wd.size = new Size(W - P * 2, wdH);
+  wd.size = new Size(IW, wdH);
   WD.forEach((d, i) => {
     const c = wd.addStack();
     c.size = new Size(cw, wdH);
     c.centerAlignContent();
-    centered(c, d, 9, i === 0 ? C.sun : i === 6 ? C.sat : C.muted, { bold: true, align: 'center' });
+    centered(c, d, 11, i === 0 ? C.sun : i === 6 ? C.sat : C.muted, { bold: true });
   });
-  w.addSpacer(4);
 
   for (let r = 0; r < weeks; r++) {
+    // 주 사이 가는 구분선 (첫 주 위에는 없음), 남는 높이는 구분선 위 빈칸이 고르게 가져간다
+    if (r > 0) {
+      w.addSpacer();
+      const line = w.addStack();
+      line.size = new Size(IW, 0.5);
+      line.backgroundColor = C.line;
+      w.addSpacer(3);
+    } else w.addSpacer(3);
+
     const row = w.addStack();
-    row.size = new Size(W - P * 2, rowH);
+    row.size = new Size(IW, 0); // 높이는 내용에 맞게
+    row.topAlignContent();
     for (let c = 0; c < 7; c++) {
       const d = new Date(y, m - 1, 1 - first.getDay() + r * 7 + c);
       const key = ymd(d);
       const inMonth = d.getMonth() === m - 1;
       const hol = HOLIDAYS[key];
       const cell = row.addStack();
-      cell.size = new Size(cw, rowH);
+      cell.size = new Size(cw, 0);
       cell.layoutVertically();
-      cell.topAlignContent();
-      cell.setPadding(1, 1, 0, 1);
+      cell.setPadding(0, 1, 0, 1);
       if (cfg.appUrl) cell.url = `${cfg.appUrl}#cal=${key}`;
 
-      // 날짜 숫자 + 쓴 날 점
+      // 날짜 숫자 (가운데) — 일지·일기 쓴 날은 오른쪽에 작은 점. 양쪽에 같은 폭을 두어 숫자가 늘 가운데 온다
       const top = cell.addStack();
       top.size = new Size(cw - 2, NUM);
       top.centerAlignContent();
+      top.setPadding(0, Math.max(0, (cw - 2 - (NUM + 12)) / 2), 0, 0);
+      const padL = top.addStack(); padL.size = new Size(6, NUM);
       const num = top.addStack();
       num.size = new Size(NUM, NUM);
       num.centerAlignContent();
-      // 좁은 칸에서는 늘어나는 빈칸(addSpacer)이 최소 너비를 먹어 숫자가 사라진다 → 자릿수로 왼쪽 여백을 계산해 가운데 맞춤
       const digits = String(d.getDate()).length;
-      num.setPadding(0, Math.max(0, (NUM - digits * 6.2) / 2), 0, 0);
+      num.setPadding(0, Math.max(0, (NUM - digits * 7.4) / 2), 0, 0);
       if (key === today) { num.backgroundColor = C.accent; num.cornerRadius = NUM / 2; }
       const color = key === today ? C.accentInk : !inMonth ? C.faint : (c === 0 || hol) ? C.sun : c === 6 ? C.sat : C.text;
-      txt(num, d.getDate(), 10, color, { bold: true });
+      txt(num, d.getDate(), 12.5, color, { bold: true });
+      const padR = top.addStack(); padR.size = new Size(6, NUM); padR.centerAlignContent();
       if (inMonth && (work.has(key) || diary.has(key))) {
-        top.addSpacer(2);
-        const dot = top.addStack();
+        padR.addSpacer(2);
+        const dot = padR.addStack();
         dot.size = new Size(4, 4);
         dot.cornerRadius = 2;
         dot.backgroundColor = C.accent;
       }
-      top.addSpacer();
 
-      if (!inMonth) { cell.addSpacer(); continue; }
-      const list = eventsOn(data.events, key);
-      list.slice(0, list.length > maxEv ? maxEv - 1 : maxEv).forEach((o) => {
-        cell.addSpacer(1.5);
+      // 일정 칩: 공휴일 이름도 한 줄 차지. 줄 수는 늘 같게 채워 모든 주의 높이를 맞춘다
+      const items = [];
+      if (inMonth && hol) items.push({ title: hol, color: null, first: true });
+      if (inMonth) for (const o of eventsOn(data.events, key)) items.push({ title: o.ev.title || '·', color: o.ev.color || 'green', first: o.first });
+      const shown = items.length > maxEv ? maxEv - 1 : Math.min(items.length, maxEv);
+      for (let i = 0; i < maxEv; i++) {
+        cell.addSpacer(GAP);
         const b = cell.addStack();
-        b.size = new Size(cw - 3, 10);
-        b.backgroundColor = evColor(o.ev.color, o.first ? 0.22 : 0.12);
-        b.cornerRadius = 2;
-        b.setPadding(0, 2, 0, 1);
+        b.size = new Size(cw - 2, CHIP);
         b.centerAlignContent();
-        txt(b, o.ev.title || '·', 7.5, C.text);
-        b.addSpacer();
-      });
-      if (list.length > maxEv) { cell.addSpacer(1); txt(cell, `+${list.length - maxEv + 1}`, 7, C.muted); }
-      cell.addSpacer();
+        if (i < shown) {
+          const it = items[i];
+          const col = it.color ? evColor(it.color) : C.sun;
+          b.backgroundColor = it.color ? evColor(it.color, 0.18) : Color.dynamic(new Color('#000000', 0.05), new Color('#ffffff', 0.08));
+          b.cornerRadius = 3;
+          const bar = b.addStack();
+          bar.size = new Size(it.first ? 2 : 0.01, CHIP);
+          bar.backgroundColor = col;
+          b.addSpacer(2);
+          const t = txt(b, it.title, 9.5, it.color ? C.text : C.sun);
+          t.minimumScaleFactor = 0.8;
+        } else if (i === shown && items.length > maxEv) {
+          b.addSpacer(4);
+          txt(b, `+${items.length - shown}`, 9, C.muted);
+          b.addSpacer();
+        }
+      }
     }
   }
+  w.addSpacer(2);
 }
 
 // ---- 중간 위젯: 오늘부터 2주 일정 ----
@@ -389,7 +418,7 @@ async function main() {
     txt(w, 'Scriptable 앱에서 이 스크립트를 한 번 실행해 설정하세요', 12, C.muted);
   } else {
     const { data, offline, error } = await loadData(cfg);
-    const note = offline ? (error ? `⚠ ${error}` : '오프라인') : null;
+    const note = offline ? (data.events.length || data.written.work.length ? '오프라인' : `⚠ ${error}`) : null;
     if (fam === 'small') buildSmall(w, data);
     else if (fam === 'medium') buildMedium(w, data, cfg, note);
     else buildLarge(w, data, cfg, note);

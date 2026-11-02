@@ -1,0 +1,15 @@
+{"at":0,"written":{"work":["2026-11-02","2026-10-27"],"diary":["2026-11-01"]},
+"events":[
+{"id":"a","title":"셀나들이","date":"2026-11-01","repeat":"none","color":"green","skip":[]},
+{"id":"b","title":"[점약] 영찬","date":"2026-11-02","time":"10:00","repeat":"none","color":"green","skip":[]},
+{"id":"c","title":"아이디헤어","date":"2026-11-02","repeat":"none","color":"green","skip":[]},
+{"id":"d","title":"[제피로스] 회의","date":"2026-11-06","repeat":"none","color":"blue","skip":[]},
+{"id":"e","title":"양육팀 모임","date":"2026-11-06","repeat":"weekly","color":"green","skip":["2026-11-13"]},
+{"id":"f","title":"아크크루 리트릿","date":"2026-11-13","end":"2026-11-14","repeat":"none","color":"green","skip":[]},
+{"id":"g","title":"[헬스장] 스트레칭","date":"2026-11-16","repeat":"none","color":"purple","skip":[]},
+{"id":"h","title":"소설","date":"2026-11-22","repeat":"none","color":"yellow","skip":[]},
+{"id":"i","title":"유하 졸업공연","date":"2026-11-26","repeat":"none","color":"red","skip":[]},
+{"id":"j","title":"교회 김장?","date":"2026-11-28","repeat":"none","color":"green","skip":[]},
+{"id":"k","title":"영운엄마 새집","date":"2026-11-29","repeat":"none","color":"green","skip":[]},
+{"id":"l","title":"치과","date":"2026-11-02","time":"18:30","repeat":"none","color":"red","skip":[]}
+]}
