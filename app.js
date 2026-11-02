@@ -706,7 +706,7 @@ function settingsDialog() {
         st.kind === 'error' ? st.msg : left ? `아직 올라가지 않은 항목 ${left}개` : '모든 메모가 저장돼 있어요.'),
       h('div', { class: 'row' },
         h('button', { type: 'button', class: 'btn', onclick: () => { Cloud.syncNow(); toast('지금 저장할게요'); } }, icon('sync'), '지금 저장'),
-        h('button', { type: 'button', class: 'btn', onclick: widgetDialog }, '아이폰 위젯 연결 코드'),
+        h('button', { type: 'button', class: 'btn', onclick: widgetDialog }, '아이폰 캘린더 위젯'),
         h('button', { type: 'button', class: 'btn danger', onclick: async () => {
           const n = Cloud.unpushedCount();
           if (!confirm(n
@@ -749,13 +749,33 @@ function widgetDialog() {
   const code = Cloud.widgetCode(appUrl);
   if (!code) { toast('먼저 로그인해 주세요'); return; }
   const box = h('textarea', { class: 'in code-box', rows: 4, readonly: true, value: code });
-  dialog('아이폰 위젯 연결 코드', h('div', { class: 'stack' },
-    h('p', { class: 'small muted' }, 'Scriptable 위젯을 처음 실행할 때 이 코드를 붙여 넣으면, 위젯이 내 캘린더를 읽을 수 있어요.'),
+  // 아이폰 사파리는 버튼을 누른 그 순간에만 복사를 허락해서, 스크립트는 미리 받아 둔다
+  let script = '';
+  fetch(encodeURI('widget/메모장-캘린더-위젯.js')).then((r) => r.text()).then((t) => { script = t; }).catch(() => {});
+  const copy = async (text, what, fallback) => {
+    try { await navigator.clipboard.writeText(text); toast(`${what}를 복사했어요`); } catch { fallback?.(); toast('복사가 막혔어요. 길게 눌러 복사해 주세요'); }
+  };
+  dialog('아이폰 캘린더 위젯', h('div', { class: 'stack' },
+    h('p', { class: 'small muted' }, '아이폰에서 이 화면을 열고 순서대로 누르세요. 자세한 순서는 아래 "설치 순서"에 있어요.'),
+    h('h3', { class: 'sec-h' }, '① 위젯 스크립트'),
+    h('p', { class: 'small muted' }, 'Scriptable 앱 → 오른쪽 위 ＋ → 붙여넣기 → 제목을 "내 메모장 캘린더"로'),
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn', onclick: () => {
+      if (!script) { toast('스크립트를 받는 중이에요. 잠시 뒤 다시 눌러 주세요'); return; }
+      copy(script, '위젯 스크립트', () => window.open(encodeURI('widget/메모장-캘린더-위젯.js'), '_blank'));
+    } }, '위젯 스크립트 복사')),
+    h('h3', { class: 'sec-h' }, '② 연결 코드'),
+    h('p', { class: 'small muted' }, 'Scriptable에서 "내 메모장 캘린더"를 처음 실행하면 뜨는 칸에 붙여넣기'),
     box,
-    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: async () => {
-      try { await navigator.clipboard.writeText(code); toast('복사했어요'); } catch { box.select(); toast('코드를 길게 눌러 복사해 주세요'); }
-    } }, '복사하기')),
-    h('p', { class: 'small warn' }, '이 코드가 있으면 내 메모를 읽을 수 있어요. 다른 사람에게 보내거나 채팅에 붙여 넣지 마세요. 위젯을 다시 설정할 때는 여기서 새 코드를 받으면 돼요.')));
+    h('div', { class: 'row' }, h('button', { type: 'button', class: 'btn primary', onclick: () => copy(code, '연결 코드', () => box.select()) }, '연결 코드 복사')),
+    h('p', { class: 'small warn' }, '연결 코드가 있으면 내 메모를 읽을 수 있어요. 다른 사람에게 보내거나 채팅에 붙여 넣지 마세요.'),
+    h('details', { class: 'help' },
+      h('summary', {}, '설치 순서'),
+      h('ol', {},
+        h('li', {}, 'App Store에서 ', h('b', {}, 'Scriptable'), ' 설치 (무료)'),
+        h('li', {}, '여기서 ', h('b', {}, '위젯 스크립트 복사'), ' → Scriptable ＋ → 붙여넣기 → 제목 "내 메모장 캘린더" → Done'),
+        h('li', {}, '여기서 ', h('b', {}, '연결 코드 복사'), ' → Scriptable에서 "내 메모장 캘린더" 눌러 실행 → 칸에 붙여넣기 → 저장'),
+        h('li', {}, '홈 화면 빈 곳 길게 누르기 → 왼쪽 위 편집 → 위젯 추가 → Scriptable → ', h('b', {}, '큰 크기'), ' → 위젯 추가'),
+        h('li', {}, '올라온 위젯 길게 누르기 → 위젯 편집 → Script: "내 메모장 캘린더"')))));
 }
 
 function exportBackup() {
