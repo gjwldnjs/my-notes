@@ -235,7 +235,7 @@ function buildLarge(w, data, cfg, note) {
   const days = new Date(y, m, 0).getDate();
   const weeks = Math.ceil((first.getDay() + days) / 7);
   const cw = Math.floor(IW / 7);
-  const NUM = 22; // 날짜 숫자 줄 높이 (오늘 동그라미 지름)
+  const NUM = 18; // 날짜 숫자 줄 높이 (오늘 동그라미 지름)
   const CHIP = 13, GAP = 2; // 일정 칩 높이·간격
   const headH = 24, wdH = 16;
   // 한 주에 들어갈 일정 줄 수: 남는 높이로 계산 (2~3줄)
@@ -260,7 +260,7 @@ function buildLarge(w, data, cfg, note) {
     const c = wd.addStack();
     c.size = new Size(cw, wdH);
     c.centerAlignContent();
-    centered(c, d, 11, i === 0 ? C.sun : i === 6 ? C.sat : C.muted, { bold: true });
+    centered(c, d, 10.5, i === 0 ? C.sun : i === 6 ? C.sat : C.muted);
   });
 
   for (let r = 0; r < weeks; r++) {
@@ -298,7 +298,7 @@ function buildLarge(w, data, cfg, note) {
       num.centerAlignContent();
       if (key === today) { num.backgroundColor = C.accent; num.cornerRadius = NUM / 2; }
       const color = key === today ? C.accentInk : !inMonth ? C.faint : (c === 0 || hol) ? C.sun : c === 6 ? C.sat : C.text;
-      txt(num, d.getDate(), 12.5, color, { bold: true });
+      txt(num, d.getDate(), 12, color, { bold: key === today });
       const padR = top.addStack(); padR.size = new Size(6, NUM); padR.centerAlignContent();
       if (inMonth && (work.has(key) || diary.has(key))) {
         padR.addSpacer(2);
