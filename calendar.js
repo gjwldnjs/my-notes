@@ -42,6 +42,7 @@ export function eventsOn(events, key) {
 // 보고 있는 달·고른 날 (화면을 다시 그려도 유지)
 const view = { month: null, sel: null };
 export function calGoto(key) { view.sel = key; view.month = key.slice(0, 7); }
+export const calMonth = () => view.month || ymd(new Date()).slice(0, 7); // 지금 보고 있는 달 'YYYY-MM'
 
 // 그날 업무일지·일기 메모 (없으면 null)
 function dailyNode(folderKey, key) {
@@ -60,8 +61,9 @@ function suppStatus(key) {
   return { done: items.filter((it) => log.has(it.id)).length, total: items.length };
 }
 
-export function calEl(n, { openDaily, openSupp }) {
+export function calEl(n, { openDaily, openSupp, onMonth }) {
   const root = h('div', { class: 'cal' });
+  let shownMonth = null; // 달이 바뀔 때만 onMonth 를 부른다
   let editing = null; // { id } 고치는 중 (새 일정이면 id: null)
   let confirmDel = null; // 반복 일정 삭제 방법 묻는 중인 id
 
@@ -87,6 +89,7 @@ export function calEl(n, { openDaily, openSupp }) {
     view.sel ||= today;
     view.month ||= view.sel.slice(0, 7);
     const [y, m] = view.month.split('-').map(Number);
+    if (view.month !== shownMonth) { shownMonth = view.month; onMonth?.(view.month); }
     const first = new Date(y, m - 1, 1);
     const days = new Date(y, m, 0).getDate();
     const weeks = Math.ceil((first.getDay() + days) / 7);

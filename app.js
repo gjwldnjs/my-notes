@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { state } from './store.js';
 import * as Cloud from './cloud.js';
 import { suppEl } from './supp.js';
-import { calEl, calGoto } from './calendar.js';
+import { calEl, calGoto, calMonth } from './calendar.js';
 import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -298,6 +298,25 @@ function toggleFocus(on = !document.body.classList.contains('focus')) {
 
 const ed = { id: null, at: 0, pending: false, crumbs: null, meta: null, body: null, supp: null, cal: null, editor: null, flush: null };
 
+// 편집기에 보이는 글: 캘린더는 "지금 보는 달"의 메모(data.memos['YYYY-MM']), 나머지는 본문(content)
+const memoOf = (n) => (n.kind === 'cal' ? (n.data?.memos?.[calMonth()] || '') : n.content || '');
+function writeMemo(n, md) {
+  if (n.kind !== 'cal') { S.setContent(n.id, md); return; }
+  const d = structuredClone(n.data || {});
+  d.memos ||= {};
+  if ((d.memos[calMonth()] || '') === md) return;
+  if (md) d.memos[calMonth()] = md; else delete d.memos[calMonth()];
+  S.setData(n.id, d);
+}
+// 예전 방식(본문 하나)으로 적어 둔 캘린더 메모는 이번 달 메모로 옮긴다 (한 번만)
+function migrateCalMemo(n) {
+  if (n.kind !== 'cal' || !n.content || n.data?.memos) return;
+  const d = structuredClone(n.data || {});
+  d.memos = { [ymd(new Date()).slice(0, 7)]: n.content };
+  S.setData(n.id, d);
+  S.setContent(n.id, '');
+}
+
 // 열려 있던 편집기를 닫기 전에 덜 저장된 글을 저장한다
 function closeEditor() {
   ed.flush?.();
@@ -323,9 +342,9 @@ function renderEditor(reason = 'local') {
   if (n.contentAt !== ed.at && reason === 'remote') {
     // 다른 기기에서 바뀐 내용 반영
     ed.at = n.contentAt;
-    if (ed.editor && getMarkdown(ed.editor) !== n.content) {
+    if (ed.editor && getMarkdown(ed.editor) !== memoOf(n)) {
       const { from } = ed.editor.state.selection;
-      setMarkdown(ed.editor, n.content);
+      setMarkdown(ed.editor, memoOf(n));
       const max = ed.editor.state.doc.content.size;
       try { ed.editor.commands.setTextSelection(Math.min(from, max)); } catch {}
     }
@@ -359,9 +378,18 @@ function buildEditor(n) {
     inner.append(ed.supp, h('h3', { class: 'memo-h' }, '메모'));
   }
   if (n.kind === 'cal' && !n.pending) {
-    ed.cal = calEl(n, { openDaily, openSupp });
+    migrateCalMemo(n);
+    const memoH = h('h3', { class: 'memo-h' }, '메모');
+    // 달을 넘기면 그 달의 메모로 갈아 끼운다 (넘기기 전에 쓰던 글은 먼저 저장)
+    ed.cal = calEl(n, { openDaily, openSupp, onMonth: (ym) => {
+      memoH.textContent = `${Number(ym.slice(5))}월 메모`;
+      if (!ed.editor) return;
+      ed.flush?.();
+      const cur = S.get(n.id);
+      if (cur && getMarkdown(ed.editor) !== memoOf(cur)) setMarkdown(ed.editor, memoOf(cur));
+    } });
     inner.classList.add('wide');
-    inner.append(ed.cal, h('h3', { class: 'memo-h' }, '메모'));
+    inner.append(ed.cal, memoH);
   }
   inner.append(ed.body);
   box.replaceChildren(inner);
@@ -395,7 +423,7 @@ function mountEditor(n) {
   let saveT = null, metaT = null;
   const editor = createEditor({
     element: host,
-    content: n.content,
+    content: memoOf(n),
     placeholder: n.kind === 'supp' || n.kind === 'cal'
       ? '메모를 쓰세요'
       : "'/'를 누르면 메뉴가 떠요 · ## 제목 · - 목록 · [] 할 일 · **굵게** · #태그",
@@ -413,8 +441,8 @@ function mountEditor(n) {
     const cur = S.get(n.id);
     if (!cur || editor.isDestroyed) return;
     const md = getMarkdown(editor);
-    if (md !== cur.content) {
-      S.setContent(n.id, md);
+    if (md !== memoOf(cur)) {
+      writeMemo(cur, md);
       if (ed.id === n.id) ed.at = S.get(n.id).contentAt;
     }
   }
