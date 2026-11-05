@@ -43,6 +43,7 @@ export const I = {
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   move: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M10 13.5h6M13.5 11l2.5 2.5-2.5 2.5"/>',
   restore: '<path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v4.5h4.5"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
 };
 
 export function icon(name, cls = '') {

@@ -18,6 +18,7 @@
 </head>
 <body>
   <header class="topbar">
+    <button id="m-menu" class="icon-btn m-only" type="button" title="메뉴" aria-label="메뉴" data-ic="menu"></button>
     <div class="brand"><span class="logo" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M6 4h9l4 4v12H6z"/><path d="M9 11h7M9 15h5"/></svg></span><span class="brand-name">내 메모장</span></div>
     <div class="search-wrap">
@@ -46,6 +47,10 @@
     <section class="editor" id="editor"></section>
   </main>
 
+  <div id="drawer" class="drawer" hidden>
+    <div class="drawer-bg"></div>
+    <aside class="drawer-panel" aria-label="전체 메뉴"></aside>
+  </div>
   <dialog id="dlg"></dialog>
   <div id="menu" class="menu" hidden></div>
   <div id="toast" class="toast" role="status" hidden></div>

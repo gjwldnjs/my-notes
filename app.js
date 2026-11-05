@@ -888,6 +888,20 @@ function importBackup() {
 }
 
 // ---------- 휴대폰 화면 ----------
+// 왼쪽 위 ≡ 메뉴: '전체' 목록을 서랍으로 보여 준다 (PC의 첫 번째 열과 같은 것)
+function openDrawer() {
+  const dr = $('#drawer');
+  const panel = $('.drawer-panel', dr);
+  panel.replaceChildren(columnEl(null, 0));
+  dr.hidden = false;
+}
+function closeDrawer() { $('#drawer').hidden = true; }
+$('.drawer-bg').addEventListener('click', closeDrawer);
+$('.drawer-panel').addEventListener('click', (e) => {
+  // 항목을 고르면(더 보기·이름 바꾸기 제외) 서랍을 닫는다. 폴더면 그 폴더가 열린 채로.
+  if (e.target.closest('.item') && !e.target.closest('.more, .rename')) closeDrawer();
+});
+$('#m-menu').addEventListener('click', openDrawer);
 let histDepth = 0;
 function renderMobile() {
   document.body.classList.toggle('is-note', !!ui.note);
