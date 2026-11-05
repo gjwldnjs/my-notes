@@ -12,6 +12,7 @@ import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import Suggestion from '@tiptap/suggestion';
 import HardBreak from '@tiptap/extension-hard-break';
+import Paragraph from '@tiptap/extension-paragraph';
 import { Markdown } from 'tiptap-markdown';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
@@ -139,6 +140,21 @@ const PlainHardBreak = HardBreak.extend({
     };
   },
 });
+// 빈 문단(엔터만 친 줄)은 마크다운에 적을 방법이 없어 사라진다 → 보이지 않는 글자 한 줄로 저장해 두고, 읽을 때 다시 빈 문단으로 되돌린다
+const KeepEmptyParagraph = Paragraph.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state, node) {
+          if (node.content.size === 0 && !state.inTable) { state.write(ZW); state.closeBlock(node); return; }
+          state.renderInline(node);
+          state.closeBlock(node);
+        },
+        parse: {},
+      },
+    };
+  },
+});
 // 체크박스 목록도 항목 사이 빈 줄 없이 저장
 const TightTaskList = Extension.create({
   name: 'tightTaskList',
@@ -194,8 +210,9 @@ export function createEditor({ element, content = '', placeholder = '', onChange
   const editor = new Editor({
     element,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] }, hardBreak: false }),
+      StarterKit.configure({ heading: { levels: [1, 2, 3] }, hardBreak: false, paragraph: false }),
       PlainHardBreak,
+      KeepEmptyParagraph,
       TightTaskList,
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -209,14 +226,28 @@ export function createEditor({ element, content = '', placeholder = '', onChange
     ],
     content: prep(content),
     editorProps: { attributes: { class: 'md pm', spellcheck: 'false' } },
-    onUpdate: ({ editor: ed }) => onChange?.(ed),
+    onUpdate: ({ editor: ed }) => { if (!ed.__quiet) onChange?.(ed); },
   });
+  clearZW(editor);
   return editor;
 }
 
-export const getMarkdown = (editor) => editor.storage.markdown.getMarkdown().split(ZW).join('');
+// 읽어 들인 글에서 "보이지 않는 글자만 있는 문단"을 진짜 빈 문단으로 바꾼다 (커서가 걸리지 않게). 변경 알림·되돌리기 기록 없이.
+function clearZW(editor) {
+  const { doc } = editor.state;
+  const hits = [];
+  doc.descendants((node, pos) => { if (node.type.name === 'paragraph' && node.textContent === ZW) hits.push(pos + 1); });
+  if (!hits.length) return;
+  const tr = editor.state.tr.setMeta('addToHistory', false);
+  for (const p of hits.reverse()) tr.delete(p, p + 1);
+  editor.__quiet = true;
+  try { editor.view.dispatch(tr); } finally { editor.__quiet = false; }
+}
+
+// 저장: 보이지 않는 글자는 지우되, 그 글자만 있는 줄(= 빈 문단 표시)은 남긴다
+export const getMarkdown = (editor) => editor.storage.markdown.getMarkdown().split('\n').map((l) => (l === ZW ? l : l.split(ZW).join(''))).join('\n');
 // 바깥(다른 기기)에서 바뀐 내용으로 갈아 끼우기. 변경 알림(onChange)은 보내지 않는다.
-export const setMarkdown = (editor, md) => editor.commands.setContent(prep(md), false);
+export const setMarkdown = (editor, md) => { editor.commands.setContent(prep(md), false); clearZW(editor); };
 
 // 일지 템플릿처럼 제목 아래 첫 빈칸으로 커서 옮기기
 export function focusFirstSlot(editor) {

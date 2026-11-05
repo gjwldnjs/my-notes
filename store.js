@@ -40,6 +40,7 @@ export function defaultSettings() {
     showNumbers: true,
     workFolder: 'seed-work',
     diaryFolder: 'seed-diary',
+    memoFolder: 'seed-memo',
     suppNote: 'seed-supp',
     calNote: 'seed-cal',
     workTemplate: '## 오늘 할 일\n- [ ] \n\n## 한 일\n- \n\n## 메모\n\n\n## 내일 할 일\n- [ ] ',

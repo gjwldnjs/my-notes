@@ -22,7 +22,7 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #161514;
     --panel: #1c1b19;
     --surface: #22211f;
@@ -43,6 +43,27 @@
     --shadow: 0 12px 32px rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #161514;
+  --panel: #1c1b19;
+  --surface: #22211f;
+  --line: #33312d;
+  --line-2: #46423c;
+  --text: #ebe9e4;
+  --text-2: #c3bfb6;
+  --muted: #8f8a80;
+  --accent: #7cc0a7;
+  --accent-ink: #0f1f19;
+  --accent-soft: #24372f;
+  --accent-soft-2: #1f2925;
+  --danger: #e3897e;
+  --warn: #d9ab52;
+  --ok: #82cc9f;
+  --sat: #86a9e0;
+  --mark: #5c4c14;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .5);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -188,6 +209,7 @@ body.focus .columns { display: none; }
 }
 .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
 .seg .ic { width: 15px; height: 15px; }
+.seg.wide button { padding: 6px 14px; }
 
 .toolbar {
   display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; position: sticky; top: 0; z-index: 2;
@@ -417,8 +439,9 @@ label.chk input { width: 17px; height: 17px; accent-color: var(--accent); }
 /* ---------- 캘린더 ---------- */
 :root { --c-green: #2f7d5f; --c-blue: #3b6fc2; --c-red: #c4473b; --c-yellow: #b9860f; --c-purple: #7a55b8; --mk-work: #3b6fc2; --mk-diary: #9a5cc0; }
 @media (prefers-color-scheme: dark) {
-  :root { --c-green: #6cc29f; --c-blue: #7fa6e8; --c-red: #ea8a7f; --c-yellow: #e2b84f; --c-purple: #b598e6; --mk-work: #7fa6e8; --mk-diary: #c39ae0; }
+  :root:not([data-theme="light"]) { --c-green: #6cc29f; --c-blue: #7fa6e8; --c-red: #ea8a7f; --c-yellow: #e2b84f; --c-purple: #b598e6; --mk-work: #7fa6e8; --mk-diary: #c39ae0; }
 }
+:root[data-theme="dark"] { --c-green: #6cc29f; --c-blue: #7fa6e8; --c-red: #ea8a7f; --c-yellow: #e2b84f; --c-purple: #b598e6; --mk-work: #7fa6e8; --mk-diary: #c39ae0; }
 .c-green { --c: var(--c-green); } .c-blue { --c: var(--c-blue); } .c-red { --c: var(--c-red); }
 .c-yellow { --c: var(--c-yellow); } .c-purple { --c: var(--c-purple); }
 .ed-inner.wide { max-width: 1220px; }

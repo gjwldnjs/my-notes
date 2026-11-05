@@ -263,7 +263,7 @@ function addMenu(anchor, fid) {
   openMenu(anchor, [
     ['note', '새 메모', () => newNote(fid)],
     ['folder', '새 폴더', () => newFolder(fid)],
-    ['pill', '영양제 표', () => newNote(fid, 'supp')],
+    fid == null && ['pill', '영양제 표', () => newNote(fid, 'supp')], // 영양제 표는 맨 위(전체)에서만
   ]);
 }
 
@@ -455,6 +455,7 @@ function emptyEl() {
       h('button', { type: 'button', class: 'btn', onclick: () => newNote(fid) }, icon('note'), f ? '이 폴더에 새 메모' : '새 메모'),
       h('button', { type: 'button', class: 'btn', onclick: () => openDaily('work') }, icon('brief'), '오늘 업무일지'),
       h('button', { type: 'button', class: 'btn', onclick: () => openDaily('diary') }, icon('book'), '오늘 일기'),
+      h('button', { type: 'button', class: 'btn', onclick: openTodayMemo }, icon('note'), '오늘 메모'),
       h('button', { type: 'button', class: 'btn', onclick: openSupp }, icon('pill'), '영양제 체크'),
       h('button', { type: 'button', class: 'btn', onclick: () => openCalendar() }, icon('cal'), '캘린더')),
     h('p', { class: 'hint' }, "Ctrl+K 검색 · Ctrl+S 지금 동기화 · 글 속에서 '/'를 누르면 메뉴", h('br'), '항목을 끌어서 순서를 바꾸거나 폴더에 넣을 수 있어요')));
@@ -494,6 +495,17 @@ function openDaily(kind, date = new Date()) {
   const { n, isNew } = ensureChild(`${root.id}~${ymd(date)}`, 'note', `${m}월 ${d}일 (${WD[date.getDay()]})`, mf.id, d, tpl);
   openNote(n.id);
   if (isNew && ed.editor) focusFirstSlot(ed.editor); // 템플릿 첫 칸으로 커서 이동
+}
+
+// 메모 폴더 바로 아래에 오늘 날짜 제목으로 새 메모 (하루에 여러 장이면 뒤에 2, 3…)
+function openTodayMemo() {
+  const root = ensureRoot('memoFolder', '메모');
+  const d = new Date();
+  const base = `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`;
+  const same = S.kids(root.id).filter((k) => k.type === 'note' && (k.name === base || k.name.startsWith(base + ' '))).length;
+  const n = S.create({ type: 'note', kind: 'md', name: same ? `${base} ${same + 1}` : base, parent: root.id });
+  openNote(n.id, 'edit');
+  if (ed.editor) ed.editor.commands.focus('end');
 }
 
 function openSupp() {
@@ -684,6 +696,25 @@ function loginDialog({ first = false } = {}) {
   ));
 }
 
+// ---------- 화면 테마 (이 기기에만 저장: 기기마다 다르게 두는 게 자연스러워서 계정 설정에 넣지 않음) ----------
+const THEMES = [['system', '시스템 따름'], ['light', '라이트'], ['dark', '다크']];
+const getTheme = () => { try { return localStorage.getItem('theme') || 'system'; } catch { return 'system'; } };
+function setTheme(t) {
+  try { localStorage.setItem('theme', t); } catch {}
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  // 아이폰 상단(상태 표시줄) 색도 맞춘다
+  const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#1d1c1a' : '#faf9f6'; });
+}
+function themeSeg() {
+  const seg = h('div', { class: 'seg wide', role: 'group', 'aria-label': '화면 테마' });
+  const paint = () => seg.replaceChildren(...THEMES.map(([k, label]) =>
+    h('button', { type: 'button', class: k === getTheme() ? 'on' : '', onclick: () => { setTheme(k); paint(); } }, label)));
+  paint();
+  return seg;
+}
+
 function settingsDialog() {
   const u = Cloud.currentUser();
   const st = Cloud.getStatus();
@@ -729,6 +760,7 @@ function settingsDialog() {
     h('section', {}, h('h3', { class: 'sec-h' }, '계정'), account),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '보기'),
+      h('div', { class: 'row' }, h('span', { class: 'small' }, '화면 테마'), themeSeg()),
       h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: state.settings.showNumbers, onchange: (e) => S.setSettings({ showNumbers: e.target.checked }) }), '목록에 번호(1. 2. 3.) 붙이기')),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '일지 템플릿'),
@@ -868,11 +900,13 @@ async function init() {
     renderMobile();
     if (!res.hidden && document.activeElement === q) renderResults();
   });
+  setTheme(getTheme());
   S.setOnDirty(() => Cloud.schedulePush());
   Cloud.onSyncStatus(paintSync);
 
   $('#btn-work').onclick = () => openDaily('work');
   $('#btn-diary').onclick = () => openDaily('diary');
+  $('#btn-memo').onclick = openTodayMemo;
   $('#btn-date').onclick = () => openCalendar();
   $('#btn-supp').onclick = openSupp;
   $('#btn-settings').onclick = settingsDialog;

@@ -7,6 +7,7 @@
   <meta name="description" content="폴더처럼 정리하고 마크다운으로 쓰는 개인 메모장">
   <meta name="theme-color" content="#faf9f6" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1d1c1a" media="(prefers-color-scheme: dark)">
+  <script>try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="메모장">
   <link rel="manifest" href="manifest.webmanifest">
@@ -27,6 +28,7 @@
     <div class="actions">
       <button id="btn-work" class="pill-btn" type="button" title="오늘 업무일지" data-ic="brief"><span class="lbl">업무일지</span></button>
       <button id="btn-diary" class="pill-btn" type="button" title="오늘 일기" data-ic="book"><span class="lbl">일기</span></button>
+      <button id="btn-memo" class="pill-btn" type="button" title="오늘 메모" data-ic="note"><span class="lbl">메모</span></button>
       <button id="btn-date" class="icon-btn" type="button" title="캘린더" aria-label="캘린더" data-ic="cal"></button>
       <button id="btn-supp" class="icon-btn" type="button" title="영양제 체크" aria-label="영양제 체크" data-ic="pill"></button>
       <button id="sync-chip" class="sync-chip" type="button"></button>
