@@ -5,7 +5,9 @@
 //   contentAt : 본문(content)·부가 데이터(data)가 마지막으로 바뀐 시각
 // 두 기기에서 동시에 고쳐도, 동기화할 때 항목마다 더 최근 것을 고른다.
 
-const DB_NAME = 'my-notes';
+// 주소에 ?p=이름 을 붙이면 같은 브라우저에서도 따로 떨어진 저장공간·로그인을 쓴다 (한 컴퓨터에서 두 계정을 동시에)
+export const PROFILE = new URLSearchParams(location.search).get('p') || '';
+const DB_NAME = 'my-notes' + (PROFILE ? '-' + PROFILE : '');
 let dbp;
 function db() {
   return (dbp ||= new Promise((res, rej) => {

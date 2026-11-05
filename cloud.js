@@ -20,7 +20,7 @@ const cfg = EMU ? { apiKey: 'demo-key', projectId: 'demo-my-notes', authDomain: 
 const ready = !!(cfg && cfg.apiKey);
 let auth = null, db = null;
 if (ready) {
-  const app = F.initializeApp(cfg);
+  const app = F.initializeApp(cfg, S.PROFILE ? 'profile-' + S.PROFILE : '[DEFAULT]');
   auth = F.getAuth(app);
   db = F.initializeFirestore(app, { localCache: F.memoryLocalCache() });
   if (EMU) {

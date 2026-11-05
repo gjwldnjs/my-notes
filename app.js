@@ -13,9 +13,11 @@ const isMobile = () => mq.matches;
 
 // ---------- 화면 상태 (기기마다 따로) ----------
 const ui = { path: [], note: null, mode: null };
-try { Object.assign(ui, JSON.parse(localStorage.getItem('ui') || '{}')); } catch {}
+// 이 기기 저장 키: 프로필 창이면 앞에 이름을 붙여 서로 섞이지 않게 (테마는 기기 공통이라 그대로)
+const LS = (k) => (S.PROFILE ? `${S.PROFILE}:${k}` : k);
+try { Object.assign(ui, JSON.parse(localStorage.getItem(LS('ui')) || '{}')); } catch {}
 ui.mode = null;
-const saveUi = () => { try { localStorage.setItem('ui', JSON.stringify({ path: ui.path, note: ui.note })); } catch {} };
+const saveUi = () => { try { localStorage.setItem(LS('ui'), JSON.stringify({ path: ui.path, note: ui.note })); } catch {} };
 let renaming = null;
 
 function validateUi() {
@@ -289,7 +291,7 @@ function doTrash(n) {
 // ---------- 편집기 ----------
 function toggleFocus(on = !document.body.classList.contains('focus')) {
   document.body.classList.toggle('focus', on);
-  try { localStorage.setItem('focus', on ? '1' : ''); } catch {}
+  try { localStorage.setItem(LS('focus'), on ? '1' : ''); } catch {}
   const b = $('.ed-top .icon-btn');
   if (b) b.replaceWith(iconBtn(on ? 'chev' : 'back', '목록 숨기기/보이기 (Ctrl+\\)', () => toggleFocus()));
 }
@@ -657,7 +659,7 @@ function loginDialog({ first = false } = {}) {
   const pw = h('input', { class: 'in', type: 'password', placeholder: '비밀번호 (6자 이상)', autocomplete: 'current-password' });
   const msg = h('p', { class: 'small muted' });
   const say = (t, cls = 'err') => { msg.textContent = t; msg.className = `small ${cls}`; };
-  const done = () => { try { localStorage.setItem('welcomed', '1'); } catch {} dlg.close(); };
+  const done = () => { try { localStorage.setItem(LS('welcomed'), '1'); } catch {} dlg.close(); };
   const run = async (fn) => {
     say('확인하는 중…', 'muted');
     try { await fn(); done(); toast('로그인했어요'); } catch (e) { console.error(e); say(Cloud.authError(e)); }
@@ -694,6 +696,17 @@ function loginDialog({ first = false } = {}) {
       h('p', { class: 'small muted' }, '이 기기 안과, 구글의 Firebase 서버(서울)에 저장돼요. 계정마다 칸이 나뉘어 있어서 다른 사용자는 볼 수 없어요. 다만 이 앱 운영자는 관리 화면에서 데이터에 접근할 수 있는 권한이 있어요. 아이폰 홈 화면 앱에서 Google 로그인 창이 잘 안 열리면 이메일로 가입해 주세요.')),
     first ? h('button', { type: 'button', class: 'link-btn', onclick: done }, '로그인 없이 이 기기에서만 쓰기') : null,
   ));
+}
+
+// 같은 브라우저에서 다른 계정을 동시에: 이름이 붙은 새 창(?p=이름)은 저장공간과 로그인이 완전히 따로다
+function openProfileWindow() {
+  const name = (prompt('새 창 이름을 정해 주세요 (예: 시험용)', S.PROFILE ? '' : '시험용') || '').trim();
+  if (!name) return;
+  if (name === S.PROFILE) { toast('지금 이 창이에요'); return; }
+  const base = location.pathname.replace(/index\.html$/, '');
+  const url = name === '기본' ? base : `${base}?p=${encodeURIComponent(name)}`;
+  if (!window.open(url, '_blank')) { toast('새 창이 막혔어요. 주소를 직접 열어 주세요: ' + url); return; }
+  dlg.close();
 }
 
 // ---------- 화면 테마 (이 기기에만 저장: 기기마다 다르게 두는 게 자연스러워서 계정 설정에 넣지 않음) ----------
@@ -757,7 +770,10 @@ function settingsDialog() {
   const tplDiary = h('textarea', { class: 'in', rows: 6, value: state.settings.diaryTemplate, onchange: (e) => S.setSettings({ diaryTemplate: e.target.value }) });
 
   dialog('설정', h('div', {},
-    h('section', {}, h('h3', { class: 'sec-h' }, '계정'), account),
+    h('section', {}, h('h3', { class: 'sec-h' }, '계정'), account,
+      h('div', { class: 'row', style: 'margin-top:10px' },
+        h('button', { type: 'button', class: 'btn', onclick: openProfileWindow }, '다른 계정 창 열기'),
+        h('span', { class: 'small muted' }, S.PROFILE ? `지금 창: "${S.PROFILE}"` : '이 창은 그대로 두고, 따로 로그인하는 새 창을 열어요'))),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '보기'),
       h('div', { class: 'row' }, h('span', { class: 'small' }, '화면 테마'), themeSeg()),
@@ -890,7 +906,7 @@ function paintSync(st) {
 
 async function init() {
   document.querySelectorAll('[data-ic]').forEach((el) => el.prepend(icon(el.dataset.ic)));
-  try { if (localStorage.getItem('focus')) document.body.classList.add('focus'); } catch {}
+  try { if (localStorage.getItem(LS('focus'))) document.body.classList.add('focus'); } catch {}
   await S.load();
 
   S.subscribe((reason) => {
@@ -901,6 +917,9 @@ async function init() {
     if (!res.hidden && document.activeElement === q) renderResults();
   });
   setTheme(getTheme());
+  if (S.PROFILE) { document.title = `내 메모장 (${S.PROFILE})`; const b = $('.brand-name'); if (b) b.textContent = `내 메모장 · ${S.PROFILE}`; }
+  // 체크박스는 누르는 순간의 "글쓰기 칸 활성화"를 막는다 → 체크만 되고 아이폰 키보드가 올라오지 않는다 (click은 그대로 와서 체크됨)
+  document.addEventListener('mousedown', (e) => { if (e.target.matches('.pm input[type="checkbox"]')) e.preventDefault(); });
   S.setOnDirty(() => Cloud.schedulePush());
   Cloud.onSyncStatus(paintSync);
 
@@ -936,9 +955,9 @@ async function init() {
   Cloud.start();
   // 처음 온 사람에게는 로그인 화면을 한 번 보여 준다
   let welcomed = false;
-  try { welcomed = !!localStorage.getItem('welcomed'); } catch {}
+  try { welcomed = !!localStorage.getItem(LS('welcomed')); } catch {}
   if (Cloud.isReady() && !welcomed) setTimeout(() => { if (!Cloud.currentUser() && !dlg.open) loginDialog({ first: true }); }, 1200);
-  Cloud.onUser((u) => { if (u) { try { localStorage.setItem('welcomed', '1'); } catch {} } });
+  Cloud.onUser((u) => { if (u) { try { localStorage.setItem(LS('welcomed'), '1'); } catch {} } });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { ed.flush?.(); S.persist(true); Cloud.syncNow(); }
   });
