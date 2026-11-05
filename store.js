@@ -40,6 +40,7 @@ export const META_FIELDS = ['type', 'kind', 'name', 'parent', 'pos', 'created', 
 export function defaultSettings() {
   return {
     showNumbers: true,
+    showDays: { memorial: true, pop: true, season: true }, // 캘린더에 표시할 기념일 종류
     workFolder: 'seed-work',
     diaryFolder: 'seed-diary',
     memoFolder: 'seed-memo',

@@ -5,6 +5,7 @@ import { state } from './store.js';
 import * as Cloud from './cloud.js';
 import { suppEl } from './supp.js';
 import { calEl, calGoto, calMonth } from './calendar.js';
+import { DAY_KINDS } from './holidays.js';
 import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -805,7 +806,11 @@ function settingsDialog() {
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '보기'),
       h('div', { class: 'row' }, h('span', { class: 'small' }, '화면 테마'), themeSeg()),
-      h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: state.settings.showNumbers, onchange: (e) => S.setSettings({ showNumbers: e.target.checked }) }), '목록에 번호(1. 2. 3.) 붙이기')),
+      h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: state.settings.showNumbers, onchange: (e) => S.setSettings({ showNumbers: e.target.checked }) }), '목록에 번호(1. 2. 3.) 붙이기'),
+      h('p', { class: 'small muted', style: 'margin:10px 0 4px' }, '캘린더에 표시 (공휴일은 늘 표시)'),
+      ...DAY_KINDS.map(([k, label]) => h('label', { class: 'chk' },
+        h('input', { type: 'checkbox', checked: (state.settings.showDays || {})[k] !== false,
+          onchange: (e) => { S.setSettings({ showDays: { ...(state.settings.showDays || {}), [k]: e.target.checked } }); ed.cal?.repaint(); } }), label))),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '일지 템플릿'),
       h('p', { class: 'small muted' }, '"오늘 업무일지·일기"로 새로 만들 때 들어가는 내용이에요.'),

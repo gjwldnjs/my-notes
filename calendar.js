@@ -2,7 +2,7 @@
 import { h, icon, iconBtn, ymd, pad, WD } from './dom.js';
 import * as S from './store.js';
 import { state } from './store.js';
-import { holidayOf } from './holidays.js';
+import { holidayOf, observancesOf } from './holidays.js';
 
 export const COLORS = ['green', 'blue', 'red', 'yellow', 'purple'];
 const COLOR_NAME = { green: '초록', blue: '파랑', red: '빨강', yellow: '노랑', purple: '보라' };
@@ -100,6 +100,7 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
       const d = new Date(y, m - 1, 1 - first.getDay() + i);
       const key = ymd(d);
       const hol = holidayOf(key);
+      const obs = observancesOf(key, state.settings.showDays);
       const list = eventsOn(evs, key);
       const mk = marks(key);
       cells.push(h('button', {
@@ -108,7 +109,8 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
         'aria-label': `${d.getMonth() + 1}월 ${d.getDate()}일${hol ? ' ' + hol : ''}${list.length ? ` 일정 ${list.length}개` : ''}`,
         onclick: () => { view.sel = key; view.month = key.slice(0, 7); editing = null; confirmDel = null; paint(); },
       },
-      h('span', { class: 'cal-top' }, h('span', { class: 'dn' }, d.getDate()), hol ? h('span', { class: 'hn' }, hol) : null),
+      h('span', { class: 'cal-top' }, h('span', { class: 'dn' }, d.getDate()), hol ? h('span', { class: 'hn' }, hol) : null,
+        ...obs.map((o) => h('span', { class: 'hn on', title: o.name }, o.name))),
       h('span', { class: 'evs' },
         list.slice(0, 3).map((o) => h('span', { class: `ev c-${o.ev.color || 'green'} ${o.first ? '' : 'cont'}` },
           h('span', { class: 'ev-t' }, o.first && o.ev.time ? `${o.ev.time} ` : '', o.ev.title || '(제목 없음)'))),
@@ -143,11 +145,13 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
     const key = view.sel;
     const d = parseKey(key);
     const hol = holidayOf(key);
+    const obs = observancesOf(key, state.settings.showDays);
     const list = eventsOn(events(), key);
     const panel = h('aside', { class: 'cal-day' },
       h('div', { class: 'cal-day-h' },
         h('h3', {}, `${d.getMonth() + 1}월 ${d.getDate()}일 (${WD[d.getDay()]})`),
-        hol ? h('span', { class: 'hol-badge' }, hol) : null));
+        hol ? h('span', { class: 'hol-badge' }, hol) : null,
+        ...obs.map((o) => h('span', { class: 'hol-badge on' }, o.name))));
     if (list.length) panel.append(h('ul', { class: 'ev-list' }, list.map((o) => evRow(o, key))));
     else if (!editing) panel.append(h('p', { class: 'muted small' }, '일정이 없어요.'));
     if (editing) panel.append(evForm(key));

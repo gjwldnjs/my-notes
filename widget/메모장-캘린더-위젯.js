@@ -5,6 +5,44 @@
 const KEY = 'my-notes-widget';
 
 // ---- 공휴일 (앱의 holidays.js와 같은 표) ----
+// 쉬지 않는 날들. 종류: memorial(국경일·기념일) · pop(대중 기념일) · season(절기·음력)
+// memorial·pop 은 해마다 같은 날(월-일), season 은 해마다 달라서 연도별로 적는다 (2026~2027)
+const YEARLY = {
+  memorial: {
+    '04-05': '식목일', '04-19': '4·19혁명기념일', '05-01': '근로자의 날', '05-08': '어버이날', '05-15': '스승의 날',
+    '05-18': '5·18민주화운동기념일', '06-25': '6·25전쟁일', '07-17': '제헌절', '10-01': '국군의 날',
+    '11-03': '학생독립운동기념일', '11-17': '순국선열의 날',
+  },
+  pop: {
+    '02-14': '발렌타인데이', '03-14': '화이트데이', '04-14': '블랙데이', '10-31': '핼러윈', '11-11': '빼빼로데이',
+    '12-24': '크리스마스이브', '12-31': '섣달그믐',
+  },
+};
+const SEASON = {
+  '2026-01-05': '소한', '2026-01-20': '대한', '2026-02-04': '입춘', '2026-02-19': '우수', '2026-03-03': '정월대보름', '2026-03-05': '경칩',
+  '2026-03-20': '춘분', '2026-04-05': '청명', '2026-04-20': '곡우', '2026-05-05': '입하', '2026-05-21': '소만', '2026-06-06': '망종',
+  '2026-06-21': '하지', '2026-07-07': '소서', '2026-07-15': '초복', '2026-07-23': '대서', '2026-07-25': '중복', '2026-08-07': '입추',
+  '2026-08-14': '말복', '2026-08-23': '처서', '2026-09-08': '백로', '2026-09-23': '추분', '2026-10-08': '한로', '2026-10-23': '상강',
+  '2026-11-07': '입동', '2026-11-22': '소설', '2026-12-07': '대설', '2026-12-22': '동지',
+  '2027-01-05': '소한', '2027-01-20': '대한', '2027-02-04': '입춘', '2027-02-19': '우수', '2027-02-20': '정월대보름', '2027-03-06': '경칩',
+  '2027-03-21': '춘분', '2027-04-05': '청명', '2027-04-20': '곡우', '2027-05-06': '입하', '2027-05-21': '소만', '2027-06-06': '망종',
+  '2027-06-21': '하지', '2027-07-07': '소서', '2027-07-20': '초복', '2027-07-23': '대서', '2027-07-30': '중복', '2027-08-08': '입추',
+  '2027-08-09': '말복', '2027-08-23': '처서', '2027-09-08': '백로', '2027-09-23': '추분', '2027-10-08': '한로', '2027-10-24': '상강',
+  '2027-11-07': '입동', '2027-11-22': '소설', '2027-12-07': '대설', '2027-12-22': '동지',
+};
+const DAY_KINDS = [['memorial', '국경일·기념일'], ['pop', '대중 기념일'], ['season', '절기·음력']];
+// 그날의 기념일 목록. show: 설정 { memorial: true, pop: false, ... } (없으면 모두 표시)
+function observancesOf(key, show) {
+  const out = [];
+  const md = key.slice(5);
+  for (const [k] of DAY_KINDS) {
+    if (show && show[k] === false) continue;
+    const name = k === 'season' ? SEASON[key] : YEARLY[k][md];
+    if (name) out.push({ name, kind: k });
+  }
+  return out;
+}
+
 const HOLIDAYS = {
   '2026-01-01': '신정', '2026-02-16': '설날 연휴', '2026-02-17': '설날', '2026-02-18': '설날 연휴',
   '2026-03-01': '삼일절', '2026-03-02': '대체공휴일', '2026-05-05': '어린이날', '2026-05-24': '부처님오신날',
@@ -153,6 +191,7 @@ async function loadData(cfg) {
     const sDoc = await fsRequest(cfg, token, '/nodes/__settings');
     const st = sDoc ? (fields(sDoc.fields).settings || {}) : {};
     const calId = st.calNote || 'seed-cal';
+    const showDays = st.showDays || null;
     const workF = st.workFolder || 'seed-work';
     const diaryF = st.diaryFolder || 'seed-diary';
     const cal = await fsRequest(cfg, token, `/nodes/${encodeURIComponent(calId)}`);
@@ -182,7 +221,7 @@ async function loadData(cfg) {
       if (m[1] === workF) written.work.push(m[2]);
       if (m[1] === diaryF) written.diary.push(m[2]);
     }
-    const data = { events, written, at: Date.now() };
+    const data = { events, written, showDays, at: Date.now() };
     fm.writeString(cachePath, JSON.stringify(data));
     return { data, offline: false };
   } catch (e) {
@@ -311,6 +350,7 @@ function buildLarge(w, data, cfg, note) {
       // 일정 칩: 공휴일 이름도 한 줄 차지. 줄 수는 늘 같게 채워 모든 주의 높이를 맞춘다
       const items = [];
       if (inMonth && hol) items.push({ title: hol, color: null, first: true });
+      if (inMonth) for (const o of observancesOf(key, data.showDays)) items.push({ title: o.name, color: null, first: true, obs: true });
       if (inMonth) for (const o of eventsOn(data.events, key)) items.push({ title: o.ev.title || '·', color: o.ev.color || 'green', first: o.first });
       const shown = items.length > maxEv ? maxEv - 1 : Math.min(items.length, maxEv);
       for (let i = 0; i < maxEv; i++) {
@@ -320,14 +360,14 @@ function buildLarge(w, data, cfg, note) {
         b.centerAlignContent();
         if (i < shown) {
           const it = items[i];
-          const col = it.color ? evColor(it.color) : C.sun;
+          const col = it.color ? evColor(it.color) : it.obs ? C.muted : C.sun;
           b.backgroundColor = it.color ? evColor(it.color, 0.18) : Color.dynamic(new Color('#000000', 0.05), new Color('#ffffff', 0.08));
           b.cornerRadius = 3;
           const bar = b.addStack();
           bar.size = new Size(it.first ? 2 : 0.01, CHIP);
           bar.backgroundColor = col;
           b.addSpacer(2);
-          const t = txt(b, it.title, 9.5, it.color ? C.text : C.sun);
+          const t = txt(b, it.title, 9.5, it.color ? C.text : it.obs ? C.muted : C.sun);
           t.minimumScaleFactor = 0.8;
           // 짧은 제목은 iOS가 칩 가운데로 보내므로 뒤에 빈칸을 두어 왼쪽에 붙인다 (긴 제목은 어차피 꽉 차서 그대로)
           const est = [...String(it.title)].reduce((a, ch) => a + (ch.charCodeAt(0) > 0x2e80 ? 9.5 : 5.3), 0);
