@@ -810,13 +810,24 @@ function importBackup() {
 let histDepth = 0;
 function renderMobile() {
   document.body.classList.toggle('is-note', !!ui.note);
-  const f = S.get(ui.path.at(-1));
-  $('#m-title').textContent = f ? f.name || '제목 없음' : '전체';
-  $('#m-back').hidden = !f && !ui.note;
+  // 지나온 경로를 모두 보여 준다: 전체 › 일기 › 2026년 › 10월. 앞 단계를 누르면 그 단계로 바로 돌아간다
+  const names = ui.path.map((id) => S.get(id)?.name || '제목 없음');
+  const jump = (depth) => () => { if (histDepth > depth) history.go(depth - histDepth); else goTo(depth); };
+  const el = $('#m-title');
+  el.replaceChildren(
+    h('button', { type: 'button', class: 'crumb' + (names.length ? '' : ' cur'), onclick: jump(0) }, '전체'),
+    ...names.flatMap((nm, i) => [
+      h('span', { class: 'sep' }, '›'),
+      h('button', { type: 'button', class: 'crumb' + (i === names.length - 1 ? ' cur' : ''), onclick: jump(i + 1) }, nm),
+    ]),
+  );
+  requestAnimationFrame(() => { el.scrollLeft = el.scrollWidth; });
+  $('#m-back').hidden = !names.length && !ui.note;
 }
-function goBack() {
-  if (ui.note) ui.note = null;
-  else ui.path.pop();
+function goBack() { goTo(ui.path.length + (ui.note ? 1 : 0) - 1); }
+// 경로를 depth 단계까지 되돌린다 (0 = 전체)
+function goTo(depth) {
+  while (ui.path.length + (ui.note ? 1 : 0) > Math.max(0, depth)) { if (ui.note) ui.note = null; else ui.path.pop(); }
   render();
 }
 function syncHistory() {
@@ -824,9 +835,11 @@ function syncHistory() {
   const d = ui.path.length + (ui.note ? 1 : 0);
   while (histDepth < d) { history.pushState({ app: histDepth }, ''); histDepth++; }
 }
-window.addEventListener('popstate', () => {
-  if (histDepth > 0) histDepth--;
-  if (ui.note || ui.path.length) goBack();
+window.addEventListener('popstate', (e) => {
+  // 브라우저 뒤로가기(여러 단계 한 번에 포함): 기록에 적힌 깊이까지 되돌린다
+  const d = e.state && e.state.app != null ? e.state.app + 1 : 0;
+  histDepth = Math.min(histDepth, d);
+  if (ui.note || ui.path.length) goTo(d);
 });
 $('#m-back').addEventListener('click', () => { if (histDepth > 0) history.back(); else goBack(); });
 

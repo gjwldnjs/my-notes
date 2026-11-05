@@ -515,7 +515,12 @@ select.in { appearance: auto; }
     display: flex; align-items: center; gap: 2px; padding: 4px 8px; min-height: 48px;
     border-bottom: 1px solid var(--line); background: var(--panel); flex: none;
   }
-  #m-title { font-weight: 650; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 8px; }
+  /* 현재 위치: 전체 › 일기 › 2026년 › 10월 (앞 단계를 누르면 그리로 이동) */
+  .m-crumbs { display: flex; align-items: center; gap: 1px; min-width: 0; flex: 1; overflow-x: auto; white-space: nowrap; scrollbar-width: none; padding-left: 4px; }
+  .m-crumbs::-webkit-scrollbar { display: none; }
+  .m-crumbs .crumb { font-size: 15px; color: var(--muted); padding: 6px 4px; flex: none; }
+  .m-crumbs .crumb.cur { font-weight: 650; font-size: 17px; color: var(--text); }
+  .m-crumbs .sep { opacity: .5; flex: none; }
   .columns { max-width: none; width: 100%; flex: 1; border-right: 0; }
   .col, .col:last-child { display: none; width: 100%; }
   .col:last-child { display: flex; }
