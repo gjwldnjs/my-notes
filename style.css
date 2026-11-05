@@ -504,6 +504,9 @@ label.chk input { width: 17px; height: 17px; accent-color: var(--accent); }
 .ev-form label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); min-width: 0; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 select.in { appearance: auto; }
+.time-sel { display: flex; gap: 6px; }
+.time-sel select { flex: 1; min-width: 0; padding-left: 8px; padding-right: 4px; }
+.time-hint { margin: -2px 0 0 2px; }
 .swatches { display: flex; gap: 8px; }
 .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; background: var(--c); cursor: pointer; padding: 0; }
 .sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }

@@ -61,6 +61,25 @@ function suppStatus(key) {
   return { done: items.filter((it) => log.has(it.id)).length, total: items.length };
 }
 
+// 글 속의 시간 표현 읽기: '17시' '18시반' '18시 30분' '22시 22분' '오전 11시 20분' '오후3시반' '18:30'
+// 오전·새벽·아침 → 그대로, 오후·저녁·밤 → 12를 더한다. 표시가 없으면 적힌 숫자 그대로(0~23시).
+const TIME_RE = /(오전|오후|새벽|아침|저녁|밤|am|pm)?\s*(?<!\d)(\d{1,2})\s*(?::\s*(\d{2})(?!\d)|시\s*(반|(\d{1,2})\s*분)?)\s*(am|pm)?/i;
+export function parseTime(text) {
+  const m = TIME_RE.exec(text || '');
+  if (!m) return null;
+  let hr = +m[2];
+  const min = m[3] != null ? +m[3] : m[4] === '반' ? 30 : m[5] != null ? +m[5] : 0;
+  if (hr > 23 || min > 59) return null;
+  const mer = (m[1] || m[6] || '').toLowerCase();
+  if (/오후|저녁|pm/.test(mer) && hr < 12) hr += 12;
+  if (/밤/.test(mer)) hr = hr === 12 ? 0 : hr < 12 ? hr + 12 : hr; // 밤 12시 = 0시
+  if (/오전|새벽|아침|am/.test(mer) && hr === 12) hr = 0;
+  const p2 = (x) => String(x).padStart(2, '0');
+  // 제목에서 시간 글자는 빼고, 바로 뒤에 붙은 '에'·'부터'도 함께 뗀다
+  const rest = (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length).replace(/^\s*(에|부터)(\s|$)/, ' ')).replace(/\s{2,}/g, ' ').trim();
+  return { time: `${p2(hr)}:${p2(min)}`, rest };
+}
+
 export function calEl(n, { openDaily, openSupp, onMonth }) {
   const root = h('div', { class: 'cal' });
   let shownMonth = null; // 달이 바뀔 때만 onMonth 를 부른다
@@ -195,10 +214,36 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
   function evForm(key) {
     const ev = editing.id ? events().find((e) => e.id === editing.id) : null;
     const v = { title: '', date: key, end: '', time: '', repeat: 'none', color: 'green', memo: '', ...(ev || {}) };
-    const title = h('input', { class: 'in', placeholder: '일정 이름', value: v.title });
+    const title = h('input', { class: 'in', placeholder: '일정 이름 (예: 회의 18시반)', value: v.title });
     const date = h('input', { class: 'in', type: 'date', value: v.date });
     const end = h('input', { class: 'in', type: 'date', value: v.end || '' });
-    const time = h('input', { class: 'in', type: 'time', value: v.time || '' });
+    // 시간: 시(없음·0~23시) + 분(10분 단위) 고르기. 예전에 다른 분으로 저장된 값(22:22 등)은 그 분도 보기에 넣어 준다
+    const [h0, m0] = (v.time || '').split(':');
+    const mins = [...new Set([0, 10, 20, 30, 40, 50, ...(m0 != null && !isNaN(+m0) ? [+m0] : [])])].sort((a, b) => a - b);
+    const hourSel = h('select', { class: 'in', 'aria-label': '시' },
+      h('option', { value: '', selected: h0 == null || h0 === '' || null }, '시간 없음'),
+      ...Array.from({ length: 24 }, (_, i) => h('option', { value: String(i).padStart(2, '0'), selected: h0 === String(i).padStart(2, '0') || null }, `${i}시`)));
+    const minSel = h('select', { class: 'in', 'aria-label': '분' },
+      mins.map((mm) => h('option', { value: String(mm).padStart(2, '0'), selected: (m0 ?? '00') === String(mm).padStart(2, '0') || null }, `${String(mm).padStart(2, '0')}분`)));
+    const time = {
+      get value() { return hourSel.value === '' ? '' : `${hourSel.value}:${minSel.value}`; },
+      set value(t) {
+        const [hh, mm] = (t || '').split(':');
+        hourSel.value = hh ?? '';
+        if (mm != null && ![...minSel.options].some((o) => o.value === mm)) minSel.append(h('option', { value: mm }, `${mm}분`));
+        minSel.value = mm ?? '00';
+      },
+    };
+    const timeBox = h('div', { class: 'time-sel' }, hourSel, minSel);
+    // 제목에 '18시반' '오후3시' 처럼 적으면 시간 칸에 바로 넣어 준다 (제목에서는 저장할 때 빠진다)
+    const hint = h('p', { class: 'small muted time-hint', hidden: true });
+    let fromTitle = null;
+    const scanTitle = () => {
+      const p = parseTime(title.value);
+      if (p) { time.value = p.time; fromTitle = p.rest ? p : null; hint.textContent = `시간 ${p.time} 으로 넣었어요` + (p.rest ? ` · 제목은 "${p.rest}"` : ''); hint.hidden = false; }
+      else { fromTitle = null; hint.hidden = true; }
+    };
+    title.addEventListener('input', scanTitle);
     const rep = h('select', { class: 'in' }, Object.entries(REPEAT).map(([k, l]) => h('option', { value: k, selected: k === v.repeat || null }, l)));
     let color = v.color;
     const sw = h('div', { class: 'swatches' }, COLORS.map((c) => h('button', {
@@ -207,7 +252,8 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
     })));
     const memo = h('input', { class: 'in', placeholder: '메모 (선택)', value: v.memo || '' });
     const submit = () => {
-      const t = title.value.trim();
+      scanTitle();
+      const t = (fromTitle ? fromTitle.rest : title.value).trim();
       if (!t) { title.focus(); return; }
       if (!date.value) { date.focus(); return; }
       const rec = { title: t, date: date.value, end: end.value && end.value > date.value ? end.value : '', time: time.value, repeat: rep.value, color, memo: memo.value.trim() };
@@ -222,9 +268,9 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
     };
     title.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } });
     return h('div', { class: 'ev-form' },
-      title,
+      title, hint,
       h('div', { class: 'row2' }, h('label', {}, h('span', {}, '날짜'), date), h('label', {}, h('span', {}, '끝나는 날 (여러 날일 때)'), end)),
-      h('div', { class: 'row2' }, h('label', {}, h('span', {}, '시간 (선택)'), time), h('label', {}, h('span', {}, '반복'), rep)),
+      h('div', { class: 'row2' }, h('label', {}, h('span', {}, '시간 (선택)'), timeBox), h('label', {}, h('span', {}, '반복'), rep)),
       sw,
       memo,
       ev && ev.repeat !== 'none' ? h('p', { class: 'small muted' }, '반복 일정을 고치면 모든 회차가 함께 바뀌어요.') : null,
