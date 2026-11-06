@@ -97,7 +97,17 @@ export function suppEl(n) {
 
   function paintManage() {
     const d = data();
-    const row = (it) => h('div', { class: `supp-item ${it.active === false ? 'inactive' : ''}` },
+    // 순서 바꾸기: 목록에서 한 칸 위·아래로 옮긴다 (오늘 목록·달력 표 순서도 같이 바뀐다)
+    const move = (it, dir) => {
+      save((x) => {
+        const i = x.items.findIndex((q) => q.id === it.id);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= x.items.length) return;
+        [x.items[i], x.items[j]] = [x.items[j], x.items[i]];
+      });
+      paintTop(); paintManage();
+    };
+    const row = (it, idx) => h('div', { class: `supp-item ${it.active === false ? 'inactive' : ''}` },
       h('input', { class: 'in', value: it.name, placeholder: '이름 (예: 비타민D)', onchange: (e) => { save((x) => { x.items.find((q) => q.id === it.id).name = e.target.value.trim(); }); paintTop(); } }),
       h('input', { class: 'in sub', value: it.note || '', placeholder: '복용법 (예: 아침 식후 1알)', onchange: (e) => { save((x) => { x.items.find((q) => q.id === it.id).note = e.target.value.trim(); }); paintTop(); } }),
       h('label', { class: 'tog', title: '끄면 오늘 목록에서 빠지고 기록은 남아요' },
@@ -111,7 +121,10 @@ export function suppEl(n) {
           for (const k of Object.keys(x.log)) { x.log[k] = x.log[k].filter((v) => v !== it.id); if (!x.log[k].length) delete x.log[k]; }
         });
         paintTop(); paintManage();
-      }, 'danger'));
+      }, 'danger'),
+      h('div', { class: 'supp-order' },
+        Object.assign(iconBtn('up', '위로', () => move(it, -1)), { disabled: idx === 0 }),
+        Object.assign(iconBtn('down', '아래로', () => move(it, 1)), { disabled: idx === d.items.length - 1 })));
     const det = h('details', { class: 'supp-manage', open: (manageOpen ?? !d.items.length) || null, ontoggle: (e) => { manageOpen = e.target.open; } },
       h('summary', {}, `영양제 목록 (${d.items.length})`),
       h('div', { class: 'supp-items' }, d.items.map(row)),
