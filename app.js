@@ -4,6 +4,7 @@ import * as S from './store.js';
 import { state } from './store.js';
 import * as Cloud from './cloud.js';
 import { suppEl } from './supp.js';
+import { ddayEl } from './dday.js';
 import { calEl, calGoto, calMonth } from './calendar.js';
 import { DAY_KINDS } from './holidays.js';
 import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
@@ -69,7 +70,7 @@ function openNote(id, mode) {
 }
 
 // ---------- 열(컬럼) ----------
-const typeIcon = (n) => (n.type === 'folder' ? 'folder' : n.kind === 'supp' ? 'pill' : n.kind === 'cal' ? 'cal' : 'note');
+const typeIcon = (n) => (n.type === 'folder' ? 'folder' : n.kind === 'supp' ? 'pill' : n.kind === 'cal' ? 'cal' : n.kind === 'dday' ? 'dday' : 'note');
 
 function renderColumns() {
   if (renaming) return;
@@ -267,13 +268,16 @@ function addMenu(anchor, fid) {
     ['note', '새 메모', () => newNote(fid)],
     ['folder', '새 폴더', () => newFolder(fid)],
     fid == null && ['pill', '영양제 표', () => newNote(fid, 'supp')], // 영양제 표는 맨 위(전체)에서만
+    ['dday', 'D-day', () => newNote(fid, 'dday')],
   ]);
 }
 
 function newNote(fid, kind = 'md') {
-  const n = S.create({ type: 'note', kind, name: kind === 'supp' ? '영양제' : '', parent: fid ?? null, data: kind === 'supp' ? { items: [], log: {} } : null });
-  openNote(n.id, kind === 'supp' ? 'view' : 'edit');
-  if (kind !== 'supp') $('.ed-title')?.focus();
+  const name = { supp: '영양제', dday: 'D-day' }[kind] || '';
+  const data = kind === 'supp' ? { items: [], log: {} } : kind === 'dday' ? { items: [] } : null;
+  const n = S.create({ type: 'note', kind, name, parent: fid ?? null, data });
+  openNote(n.id, kind === 'md' ? 'edit' : 'view');
+  if (kind === 'md') $('.ed-title')?.focus();
 }
 
 function newFolder(fid) {
@@ -297,7 +301,7 @@ function toggleFocus(on = !document.body.classList.contains('focus')) {
   if (b) b.replaceWith(iconBtn(on ? 'chev' : 'back', '목록 숨기기/보이기 (Ctrl+\\)', () => toggleFocus()));
 }
 
-const ed = { id: null, at: 0, pending: false, crumbs: null, meta: null, body: null, supp: null, cal: null, editor: null, flush: null };
+const ed = { id: null, at: 0, pending: false, crumbs: null, meta: null, body: null, supp: null, cal: null, dday: null, editor: null, flush: null };
 
 // 편집기에 보이는 글: 캘린더는 "지금 보는 달"의 메모(data.memos['YYYY-MM']), 나머지는 본문(content)
 const memoOf = (n) => (n.kind === 'cal' ? (n.data?.memos?.[calMonth()] || '') : n.content || '');
@@ -351,6 +355,7 @@ function renderEditor(reason = 'local') {
     }
     ed.supp?.repaint();
     ed.cal?.repaint();
+    ed.dday?.repaint();
   }
   paintMeta(n);
 }
@@ -363,6 +368,7 @@ function buildEditor(n) {
   ed.pending = !!n.pending;
   ed.supp = null;
   ed.cal = null;
+  ed.dday = null;
   ui.mode = null;
   const title = h('input', {
     class: 'ed-title', value: n.name, placeholder: '제목 없음', 'aria-label': '제목',
@@ -377,6 +383,10 @@ function buildEditor(n) {
   if (n.kind === 'supp' && !n.pending) {
     ed.supp = suppEl(n);
     inner.append(ed.supp, h('h3', { class: 'memo-h' }, '메모'));
+  }
+  if (n.kind === 'dday' && !n.pending) {
+    ed.dday = ddayEl(n);
+    inner.append(ed.dday, h('h3', { class: 'memo-h' }, '메모'));
   }
   if (n.kind === 'cal' && !n.pending) {
     migrateCalMemo(n);
@@ -425,7 +435,7 @@ function mountEditor(n) {
   const editor = createEditor({
     element: host,
     content: memoOf(n),
-    placeholder: n.kind === 'supp' || n.kind === 'cal'
+    placeholder: n.kind === 'supp' || n.kind === 'cal' || n.kind === 'dday'
       ? '메모를 쓰세요'
       : "'/'를 누르면 메뉴가 떠요 · ## 제목 · - 목록 · [] 할 일 · **굵게** · #태그",
     onChange: () => {

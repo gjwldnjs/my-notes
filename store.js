@@ -67,7 +67,10 @@ function seed() {
   });
   const supp = n('seed-supp', 'note', 'supp', '영양제', 4);
   supp.data = { items: [], log: {} };
-  return [n('seed-work', 'folder', null, '업무일지', 1), n('seed-diary', 'folder', null, '일기', 2), n('seed-memo', 'folder', null, '메모', 3), supp, seedCal()];
+  return [n('seed-work', 'folder', null, '업무일지', 1), n('seed-diary', 'folder', null, '일기', 2), n('seed-memo', 'folder', null, '메모', 3), supp, seedCal(), seedDday()];
+}
+function seedDday() {
+  return { id: 'seed-dday', type: 'note', kind: 'dday', name: 'D-day', parent: null, pos: 6, created: 0, metaAt: 0, contentAt: 0, content: '', data: { items: [] }, trashed: null };
 }
 function seedCal() {
   return { id: 'seed-cal', type: 'note', kind: 'cal', name: '캘린더', parent: null, pos: 5, created: 0, metaAt: 0, contentAt: 0, content: '', data: { events: [] }, trashed: null };
@@ -85,6 +88,7 @@ export async function load() {
     state.sync = { ...state.sync, ...saved.sync };
     // 캘린더가 생기기 전부터 쓰던 기기에도 캘린더를 넣어 준다 (고정 id라 기기끼리 합쳐짐)
     if (!state.nodes['seed-cal'] && !state.deleted['seed-cal']) state.nodes['seed-cal'] = seedCal();
+    if (!state.nodes['seed-dday'] && !state.deleted['seed-dday']) state.nodes['seed-dday'] = seedDday();
   } else {
     for (const n of seed()) state.nodes[n.id] = n;
   }
