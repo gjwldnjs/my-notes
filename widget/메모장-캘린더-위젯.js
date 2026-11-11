@@ -553,7 +553,9 @@ async function main() {
   let cfg = loadCfg();
   let fam = config.widgetFamily || 'large';
   // 위젯 편집의 Parameter 칸에 dday(또는 디데이) → D-day 위젯
-  let mode = /^\s*(d-?day|디데이)\s*$/i.test(args.widgetParameter || '') ? 'dday' : 'cal';
+  // 따옴표·마침표·띄어쓰기·다른 모양 하이픈이 섞여도 알아보게 글자만 남겨서 본다 ('D-Day.' '"dday"' 'd day' '디데이' 모두 OK)
+  const param = String(args.widgetParameter || '').toLowerCase().replace(/[^a-z가-힣]/g, '');
+  let mode = /dday|디데이|디데/.test(param) ? 'dday' : 'cal';
   if (!config.runsInWidget) {
     if (!cfg) cfg = await setup(null);
     else {
