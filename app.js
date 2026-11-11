@@ -569,8 +569,16 @@ function openCalendar(key) {
   openNote(n.id, 'view');
 }
 
-// 위젯에서 누르면 #cal 또는 #cal=2026-10-28 주소로 들어온다
+// 위젯에서 누르면 #cal 또는 #cal=2026-10-28 (D-day 위젯은 #dday=메모id) 주소로 들어온다
 function handleHash() {
+  const d = location.hash.match(/^#dday(?:=([^&]+))?$/);
+  if (d) {
+    history.replaceState(null, '', location.pathname + location.search);
+    const id = d[1] ? decodeURIComponent(d[1]) : 'seed-dday';
+    const n = S.get(id) || S.get('seed-dday');
+    if (n && !S.inTrash(n.id)) openNote(n.id, 'view');
+    return;
+  }
   const m = location.hash.match(/^#cal(?:=(\d{4}-\d{2}-\d{2}))?$/);
   if (!m) return;
   history.replaceState(null, '', location.pathname + location.search);

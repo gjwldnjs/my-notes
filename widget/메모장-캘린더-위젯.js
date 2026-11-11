@@ -1,5 +1,6 @@
 // 내 메모장 — 월별 캘린더 위젯 (아이폰 Scriptable 앱용)
 // 큰 위젯(4×4): 이번 달 달력 + 일정 / 중간 위젯: 다가오는 일정 / 작은 위젯: 오늘
+// D-day 위젯: 홈 화면 위젯을 길게 눌러 "위젯 편집" → Parameter 칸에 dday 라고 적으면 D-day 목록으로 바뀐다 (크기 상관없음)
 // 처음 한 번 Scriptable 앱 안에서 실행해서, 메모장 앱 설정의 "아이폰 위젯 연결 코드"를 붙여 넣으세요.
 
 const KEY = 'my-notes-widget';
@@ -68,6 +69,7 @@ const C = {
   sat: dyn('#3b6fc2', '#7fa6e8'),
   accent: dyn('#2f6f5e', '#7cc0a7'),
   accentInk: dyn('#ffffff', '#0f1f19'),
+  soon: dyn('#d9822b', '#f0a65a'),
 };
 const EV = {
   green: ['#2f7d5f', '#6cc29f'], blue: ['#3b6fc2', '#7fa6e8'], red: ['#c4473b', '#ea8a7f'],
@@ -106,6 +108,38 @@ function eventsOn(events, key) {
   }
   return out.sort((a, b) => (a.ev.time || '').localeCompare(b.ev.time || '') || (a.ev.title || '').localeCompare(b.ev.title || ''));
 }
+
+// ---- D-day (앱의 dday.js와 같은 계산) ----
+const DREPEAT = { m1: '매월', m3: '3개월마다', m6: '6개월마다', y1: '매년' };
+const DSTEP = { m1: 1, m3: 3, m6: 6, y1: 12 };
+function addMonths(base, n) {
+  const y = base.getFullYear(), m = base.getMonth() + n;
+  return new Date(y, m, Math.min(base.getDate(), new Date(y, m + 1, 0).getDate()));
+}
+function ddayInfo(it, t) {
+  const fmtD = (d) => `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`;
+  const diff = (a, b) => Math.round((b - a) / 86400000);
+  const base = parseKey(it.date);
+  if (it.mode === 'since') {
+    const n = diff(base, t) + 1;
+    if (n < 1) return { big: `D-${1 - n}`, sub: `${fmtD(base)} 부터`, sort: 1 - n, cls: '' };
+    const next100 = Math.ceil((n + 1) / 100) * 100;
+    const d100 = addDays(base, next100 - 1);
+    let yr = t.getFullYear() - base.getFullYear();
+    let anniv = addMonths(base, yr * 12);
+    if (anniv <= t) anniv = addMonths(base, ++yr * 12);
+    const [nm, when] = d100 < anniv ? [`${next100}일`, d100] : [`${yr}주년`, anniv];
+    return { big: `${n.toLocaleString()}일째`, sub: `${nm}까지 ${diff(t, when)}일`, sort: -1e9, cls: 'since' };
+  }
+  let when = base;
+  const k = DSTEP[it.repeat];
+  if (k && base < t) { let i = 0; while (when < t) when = addMonths(base, ++i * k); }
+  const left = diff(t, when);
+  const big = left > 0 ? `D-${left}` : left === 0 ? 'D-Day' : `D+${-left}`;
+  const rep = DREPEAT[it.repeat] ? ` · ${DREPEAT[it.repeat]}` : '';
+  return { big, sub: `${fmtD(when)}${rep}`, sort: left < 0 ? 1e9 - left : left, cls: left < 0 ? 'past' : left <= 3 ? 'soon' : '' };
+}
+const ddayColor = (cls) => (cls === 'since' ? C.sun : cls === 'soon' ? C.soon : cls === 'past' ? C.muted : C.accent);
 
 // ---- 설정 ----
 function loadCfg() {
@@ -221,7 +255,21 @@ async function loadData(cfg) {
       if (m[1] === workF) written.work.push(m[2]);
       if (m[1] === diaryF) written.diary.push(m[2]);
     }
-    const data = { events, written, showDays, at: Date.now() };
+    const dRows = await fsRequest(cfg, token, ':runQuery', {
+      structuredQuery: {
+        from: [{ collectionId: 'nodes' }],
+        where: { fieldFilter: { field: { fieldPath: 'kind' }, op: 'EQUAL', value: { stringValue: 'dday' } } },
+        select: { fields: [{ fieldPath: 'id' }, { fieldPath: 'data' }, { fieldPath: 'trashed' }] },
+      },
+    });
+    const ddays = [];
+    for (const row of dRows || []) {
+      if (!row.document) continue;
+      const n = fields(row.document.fields);
+      if (n.trashed || !n.data) continue;
+      try { for (const it of JSON.parse(n.data).items || []) ddays.push({ ...it, note: n.id }); } catch (e) {}
+    }
+    const data = { events, written, showDays, ddays, at: Date.now() };
     fm.writeString(cachePath, JSON.stringify(data));
     return { data, offline: false };
   } catch (e) {
@@ -434,10 +482,78 @@ function buildSmall(w, data) {
   w.addSpacer();
 }
 
+// ---- D-day 위젯: 가까운 순 (며칠째는 맨 위). 작은 크기는 첫 항목을 크게 ----
+function buildDday(w, data, cfg, fam, note) {
+  const t = parseKey(ymd(new Date()));
+  const list = (data.ddays || []).map((it) => ({ it, info: ddayInfo(it, t) })).sort((a, b) => a.info.sort - b.info.sort);
+  const link = (o) => (cfg.appUrl ? `${cfg.appUrl}#dday=${encodeURIComponent(o.it.note || '')}` : null);
+  if (!list.length) {
+    w.setPadding(14, 14, 14, 14);
+    txt(w, 'D-day', 13, C.text, { bold: true });
+    w.addSpacer(6);
+    const t2 = txt(w, '메모장 앱의 D-day에서 항목을 추가하세요', 11, C.muted);
+    t2.lineLimit = 3;
+    w.addSpacer();
+    return;
+  }
+  if (fam === 'small') {
+    const o = list[0];
+    w.setPadding(14, 14, 14, 14);
+    if (link(o)) w.url = link(o);
+    const nm = txt(w, o.it.name, 12, C.muted, { bold: true });
+    nm.lineLimit = 2;
+    w.addSpacer(4);
+    const big = txt(w, o.info.big, 30, ddayColor(o.info.cls), { bold: true });
+    big.minimumScaleFactor = 0.5;
+    w.addSpacer(2);
+    txt(w, o.info.sub, 10.5, C.muted);
+    w.addSpacer();
+    if (list[1]) {
+      const r = w.addStack();
+      r.centerAlignContent();
+      txt(r, list[1].info.big, 10.5, ddayColor(list[1].info.cls), { bold: true });
+      r.addSpacer(4);
+      txt(r, list[1].it.name, 10.5, C.muted);
+    }
+    return;
+  }
+  const large = fam === 'large';
+  w.setPadding(14, 16, 14, 16);
+  const head = w.addStack();
+  head.centerAlignContent();
+  txt(head, 'D-day', 15, C.text, { bold: true });
+  head.addSpacer();
+  if (note) txt(head, note, 9, C.muted);
+  w.addSpacer(large ? 10 : 6);
+  const max = large ? 9 : 4;
+  list.slice(0, max).forEach((o, i) => {
+    if (i) w.addSpacer(large ? 9 : 5);
+    const r = w.addStack();
+    r.centerAlignContent();
+    if (link(o)) r.url = link(o);
+    const num = r.addStack();
+    num.size = new Size(large ? 86 : 76, 0);
+    const n = txt(num, o.info.big, large ? 18 : 15, ddayColor(o.info.cls), { bold: true });
+    n.minimumScaleFactor = 0.6;
+    num.addSpacer();
+    r.addSpacer(6);
+    const col = r.addStack();
+    col.layoutVertically();
+    txt(col, o.it.name, large ? 13.5 : 12.5, o.info.cls === 'past' ? C.muted : C.text, { bold: true });
+    if (large) txt(col, o.info.sub, 10.5, C.muted);
+    r.addSpacer();
+    if (!large) txt(r, o.info.sub, 10, C.muted);
+  });
+  if (list.length > max) { w.addSpacer(4); txt(w, `외 ${list.length - max}개`, 10, C.muted); }
+  w.addSpacer();
+}
+
 // ---- 실행 ----
 async function main() {
   let cfg = loadCfg();
   let fam = config.widgetFamily || 'large';
+  // 위젯 편집의 Parameter 칸에 dday(또는 디데이) → D-day 위젯
+  let mode = /^\s*(d-?day|디데이)\s*$/i.test(args.widgetParameter || '') ? 'dday' : 'cal';
   if (!config.runsInWidget) {
     if (!cfg) cfg = await setup(null);
     else {
@@ -445,12 +561,15 @@ async function main() {
       a.title = '내 메모장 위젯';
       a.addAction('큰 위젯 미리보기');
       a.addAction('중간 위젯 미리보기');
+      a.addAction('D-day 위젯 미리보기 (중간)');
+      a.addAction('D-day 위젯 미리보기 (작은)');
       a.addAction('설정 다시 하기');
       a.addCancelAction('닫기');
       const i = await a.present();
-      if (i === 2) cfg = await setup(cfg);
+      if (i === 4) cfg = await setup(cfg);
       if (i === -1) { Script.complete(); return; }
-      fam = i === 1 ? 'medium' : 'large';
+      fam = i === 1 || i === 2 ? 'medium' : i === 3 ? 'small' : 'large';
+      if (i === 2 || i === 3) mode = 'dday';
     }
   }
   const w = new ListWidget();
@@ -459,16 +578,22 @@ async function main() {
     txt(w, 'Scriptable 앱에서 이 스크립트를 한 번 실행해 설정하세요', 12, C.muted);
   } else {
     const { data, offline, error } = await loadData(cfg);
-    const note = offline ? (data.events.length || data.written.work.length ? '오프라인' : `⚠ ${error}`) : null;
-    if (fam === 'small') buildSmall(w, data);
-    else if (fam === 'medium') buildMedium(w, data, cfg, note);
-    else buildLarge(w, data, cfg, note);
-    if (cfg.appUrl) w.url = `${cfg.appUrl}#cal`;
+    const note = offline ? (data.events.length || data.written.work.length || (data.ddays || []).length ? '오프라인' : `⚠ ${error}`) : null;
+    if (mode === 'dday') {
+      if (cfg.appUrl) w.url = `${cfg.appUrl}#dday`;
+      buildDday(w, data, cfg, fam, note);
+    } else {
+      if (fam === 'small') buildSmall(w, data);
+      else if (fam === 'medium') buildMedium(w, data, cfg, note);
+      else buildLarge(w, data, cfg, note);
+      if (cfg.appUrl) w.url = `${cfg.appUrl}#cal`;
+    }
   }
   // 30분마다 새로 그림 (실제 간격은 iOS가 정함)
   w.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
   if (config.runsInWidget) Script.setWidget(w);
   else if (fam === 'medium') await w.presentMedium();
+  else if (fam === 'small') await w.presentSmall();
   else await w.presentLarge();
   Script.complete();
 }

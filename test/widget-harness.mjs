@@ -42,6 +42,7 @@ class ListWidget extends WStack {
   constructor() { super(); this.dir = 'column'; this.align = 'flex-start'; this.pad = [16, 16, 16, 16]; }
   async presentLarge() {}
   async presentMedium() {}
+  async presentSmall() {}
 }
 
 const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'scriptable-'));
@@ -53,7 +54,7 @@ Object.assign(globalThis, {
   Size, Color, Font, ListWidget,
   Device: { screenSize: () => SCREEN },
   config: { runsInWidget: true, widgetFamily: family },
-  args: {},
+  args: { widgetParameter: process.env.WIDGET_PARAM || null }, // 위젯 편집의 Parameter 칸
   Keychain: {
     contains: (k) => k in store,
     get: (k) => store[k],
@@ -116,6 +117,6 @@ function html(n) {
 const [W, H] = SIZES[family];
 const body = html(result).replace('flex:none', `width:${W}px;height:${H}px;border-radius:22px;box-shadow:0 8px 30px rgba(0,0,0,.2)`);
 fs.mkdirSync(path.join(here, 'out'), { recursive: true });
-const out = path.join(here, 'out', `widget-${family}${dark ? '-dark' : ''}.html`);
+const out = path.join(here, 'out', `widget-${process.env.WIDGET_PARAM ? 'dday-' : ''}${family}${dark ? '-dark' : ''}.html`);
 fs.writeFileSync(out, `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:30px;background:${dark ? '#000' : '#e9e6df'};font-family:-apple-system,'Malgun Gothic',sans-serif">${body}</body>`);
 console.log(JSON.stringify({ out, texts, links, refresh: !!result.refreshAfterDate, url: result.url }));
