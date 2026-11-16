@@ -1,6 +1,6 @@
 // 내 메모장 — 월별 캘린더 위젯 (아이폰 Scriptable 앱용)
 // 큰 위젯(4×4): 이번 달 달력 + 일정 / 중간 위젯: 다가오는 일정 / 작은 위젯: 오늘
-// D-day 위젯: 홈 화면 위젯을 길게 눌러 "위젯 편집" → Parameter 칸에 dday 라고 적으면 D-day 목록으로 바뀐다 (크기 상관없음)
+// D-day 위젯: 홈 화면 위젯을 길게 눌러 "위젯 편집" → Parameter 칸에 dday 또는 디데이 라고 적으면 D-day 목록으로 바뀐다 (크기 상관없음)
 // 영양제 위젯: 같은 방법으로 Parameter 칸에 영양제 라고 적으면 오늘 영양제 체크 현황 (큰 위젯은 최근 7일도)
 // 처음 한 번 Scriptable 앱 안에서 실행해서, 메모장 앱 설정의 "아이폰 위젯 연결 코드"를 붙여 넣으세요.
 
@@ -663,7 +663,7 @@ async function main() {
   let fam = config.widgetFamily || 'large';
   // 위젯 편집의 Parameter 칸에 dday(또는 디데이) → D-day 위젯
   // 따옴표·마침표·띄어쓰기·다른 모양 하이픈이 섞여도 알아보게 글자만 남겨서 본다 ('D-Day.' '"dday"' 'd day' '디데이' 모두 OK)
-  const param = String(args.widgetParameter || '').toLowerCase().replace(/[^a-z가-힣]/g, '');
+  const param = String(args.widgetParameter || '').normalize('NFC').toLowerCase().replace(/[^a-z가-힣]/g, ''); // NFC: 자모가 나뉘어 들어와도 한 글자로 합친다
   let mode = /dday|디데이|디데/.test(param) ? 'dday' : /영양제|supp|pill/.test(param) ? 'supp' : 'cal';
   if (!config.runsInWidget) {
     if (!cfg) cfg = await setup(null);
