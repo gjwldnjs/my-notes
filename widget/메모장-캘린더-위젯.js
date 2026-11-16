@@ -1,6 +1,7 @@
 // 내 메모장 — 월별 캘린더 위젯 (아이폰 Scriptable 앱용)
 // 큰 위젯(4×4): 이번 달 달력 + 일정 / 중간 위젯: 다가오는 일정 / 작은 위젯: 오늘
 // D-day 위젯: 홈 화면 위젯을 길게 눌러 "위젯 편집" → Parameter 칸에 dday 라고 적으면 D-day 목록으로 바뀐다 (크기 상관없음)
+// 영양제 위젯: 같은 방법으로 Parameter 칸에 영양제 라고 적으면 오늘 영양제 체크 현황 (큰 위젯은 최근 7일도)
 // 처음 한 번 Scriptable 앱 안에서 실행해서, 메모장 앱 설정의 "아이폰 위젯 연결 코드"를 붙여 넣으세요.
 
 const KEY = 'my-notes-widget';
@@ -269,7 +270,23 @@ async function loadData(cfg) {
       if (n.trashed || !n.data) continue;
       try { for (const it of JSON.parse(n.data).items || []) ddays.push({ ...it, note: n.id }); } catch (e) {}
     }
-    const data = { events, written, showDays, ddays, at: Date.now() };
+    // 영양제: 앱 설정의 영양제 표 (기본 seed-supp)
+    const suppId = st.suppNote || 'seed-supp';
+    const sp = await fsRequest(cfg, token, `/nodes/${encodeURIComponent(suppId)}`);
+    let supp = null;
+    if (sp) {
+      const f = fields(sp.fields);
+      if (!f.trashed && f.data) {
+        try {
+          const d = JSON.parse(f.data);
+          const from = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13));
+          const log = {};
+          for (const [k, v] of Object.entries(d.log || {})) if (k >= from) log[k] = v;
+          supp = { items: (d.items || []).filter((it) => it.active !== false && it.name).map((it) => ({ id: it.id, name: it.name, note: it.note || '' })), log, note: suppId };
+        } catch (e) {}
+      }
+    }
+    const data = { events, written, showDays, ddays, supp, at: Date.now() };
     fm.writeString(cachePath, JSON.stringify(data));
     return { data, offline: false };
   } catch (e) {
@@ -483,6 +500,98 @@ function buildSmall(w, data) {
 }
 
 // ---- D-day 위젯: 가까운 순 (며칠째는 맨 위). 작은 크기는 첫 항목을 크게 ----
+// ---- 영양제 위젯: 오늘 먹은 것 ✓ / 아직 ○ ----
+function buildSupp(w, data, cfg, fam, note) {
+  const sp = data.supp;
+  const items = sp ? sp.items : [];
+  const now = new Date();
+  const done = new Set((sp && sp.log[ymd(now)]) || []);
+  const n = items.filter((it) => done.has(it.id)).length;
+  const all = items.length > 0 && n === items.length;
+  const small = fam === 'small', large = fam === 'large';
+  w.setPadding(14, small ? 14 : 16, 14, small ? 14 : 16);
+  const head = w.addStack();
+  head.centerAlignContent();
+  txt(head, '영양제', small ? 13 : 15, C.text, { bold: true });
+  head.addSpacer();
+  if (note && !small) { txt(head, note, 9, C.muted); head.addSpacer(6); }
+  if (items.length) txt(head, all ? '다 먹었어요 ✓' : `${n} / ${items.length}`, small ? 12 : 13, all ? C.accent : C.muted, { bold: true });
+  if (!items.length) {
+    w.addSpacer(6);
+    const m = txt(w, '메모장 앱의 영양제 표에서 먹는 영양제를 추가하세요', 11, C.muted);
+    m.lineLimit = 3;
+    w.addSpacer();
+    return;
+  }
+  w.addSpacer(large ? 10 : 7);
+  const row = (parent, it, size, withNote) => {
+    const r = parent.addStack();
+    r.centerAlignContent();
+    const on = done.has(it.id);
+    const mark = r.addStack();
+    mark.size = new Size(size + 6, 0);
+    txt(mark, on ? '✓' : '○', size + 1, on ? C.accent : C.faint, { bold: true });
+    r.addSpacer(4);
+    txt(r, it.name, size, on ? C.muted : C.text, { bold: !on });
+    if (withNote && it.note) { r.addSpacer(6); txt(r, it.note, size - 2.5, C.muted); }
+    r.addSpacer();
+  };
+  const more = (max) => { if (items.length > max) { w.addSpacer(3); txt(w, `외 ${items.length - max}개`, 10, C.muted); } };
+  // 아직 안 먹은 것을 위로
+  const list = [...items.filter((it) => !done.has(it.id)), ...items.filter((it) => done.has(it.id))];
+  if (small) {
+    list.slice(0, 5).forEach((it, i) => { if (i) w.addSpacer(4); row(w, it, 12, false); });
+    more(5);
+    w.addSpacer();
+    return;
+  }
+  if (!large) {
+    if (list.length <= 4) {
+      list.forEach((it, i) => { if (i) w.addSpacer(5); row(w, it, 13, true); });
+    } else {
+      // 5개 넘으면 두 칸으로 나눠서 (최대 8개)
+      const colW = Math.floor((largeSize()[0] - 32 - 10) / 2);
+      const grid = w.addStack();
+      grid.topAlignContent();
+      [list.slice(0, 4), list.slice(4, 8)].forEach((part, c) => {
+        if (c) grid.addSpacer(10);
+        const col = grid.addStack();
+        col.layoutVertically();
+        col.size = new Size(colW, 0);
+        part.forEach((it, i) => { if (i) col.addSpacer(5); row(col, it, 12.5, false); });
+      });
+      more(8);
+    }
+    w.addSpacer();
+    return;
+  }
+  // 큰 위젯: 목록(최대 8개) + 최근 7일
+  list.slice(0, 8).forEach((it, i) => { if (i) w.addSpacer(7); row(w, it, 14, true); });
+  more(8);
+  w.addSpacer();
+  txt(w, '최근 7일', 10.5, C.muted, { bold: true });
+  w.addSpacer(5);
+  const week = w.addStack();
+  const WDS = ['일', '월', '화', '수', '목', '금', '토'];
+  const cellW = Math.floor((largeSize()[0] - 32 - 6 * 6) / 7);
+  for (let k = 6; k >= 0; k--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - k);
+    const ids = new Set(sp.log[ymd(d)] || []);
+    const c = items.filter((it) => ids.has(it.id)).length;
+    const cell = week.addStack();
+    cell.layoutVertically();
+    cell.size = new Size(cellW, 40);
+    cell.cornerRadius = 8;
+    const full = c === items.length, none = c === 0;
+    cell.backgroundColor = full ? C.accent : C.line;
+    const fg = full ? C.accentInk : none ? C.muted : C.soon;
+    const a = cell.addStack(); a.addSpacer(); txt(a, k === 0 ? '오늘' : WDS[d.getDay()], 9.5, full ? C.accentInk : C.muted); a.addSpacer();
+    cell.addSpacer(2);
+    const b = cell.addStack(); b.addSpacer(); txt(b, full ? '✓' : `${c}/${items.length}`, 11, fg, { bold: true }); b.addSpacer();
+    if (k) week.addSpacer(6);
+  }
+}
+
 function buildDday(w, data, cfg, fam, note) {
   const t = parseKey(ymd(new Date()));
   const list = (data.ddays || []).map((it) => ({ it, info: ddayInfo(it, t) })).sort((a, b) => a.info.sort - b.info.sort);
@@ -555,23 +664,24 @@ async function main() {
   // 위젯 편집의 Parameter 칸에 dday(또는 디데이) → D-day 위젯
   // 따옴표·마침표·띄어쓰기·다른 모양 하이픈이 섞여도 알아보게 글자만 남겨서 본다 ('D-Day.' '"dday"' 'd day' '디데이' 모두 OK)
   const param = String(args.widgetParameter || '').toLowerCase().replace(/[^a-z가-힣]/g, '');
-  let mode = /dday|디데이|디데/.test(param) ? 'dday' : 'cal';
+  let mode = /dday|디데이|디데/.test(param) ? 'dday' : /영양제|supp|pill/.test(param) ? 'supp' : 'cal';
   if (!config.runsInWidget) {
     if (!cfg) cfg = await setup(null);
     else {
       const a = new Alert();
       a.title = '내 메모장 위젯';
-      a.addAction('큰 위젯 미리보기');
-      a.addAction('중간 위젯 미리보기');
-      a.addAction('D-day 위젯 미리보기 (중간)');
-      a.addAction('D-day 위젯 미리보기 (작은)');
+      const opts = [
+        ['큰 위젯 미리보기', 'large', 'cal'], ['중간 위젯 미리보기', 'medium', 'cal'],
+        ['D-day 위젯 미리보기 (중간)', 'medium', 'dday'], ['D-day 위젯 미리보기 (작은)', 'small', 'dday'],
+        ['영양제 위젯 미리보기 (중간)', 'medium', 'supp'], ['영양제 위젯 미리보기 (큰)', 'large', 'supp'],
+      ];
+      for (const o of opts) a.addAction(o[0]);
       a.addAction('설정 다시 하기');
       a.addCancelAction('닫기');
       const i = await a.present();
-      if (i === 4) cfg = await setup(cfg);
       if (i === -1) { Script.complete(); return; }
-      fam = i === 1 || i === 2 ? 'medium' : i === 3 ? 'small' : 'large';
-      if (i === 2 || i === 3) mode = 'dday';
+      if (i === opts.length) { cfg = await setup(cfg); fam = 'large'; mode = 'cal'; }
+      else { fam = opts[i][1]; mode = opts[i][2]; }
     }
   }
   const w = new ListWidget();
@@ -580,10 +690,13 @@ async function main() {
     txt(w, 'Scriptable 앱에서 이 스크립트를 한 번 실행해 설정하세요', 12, C.muted);
   } else {
     const { data, offline, error } = await loadData(cfg);
-    const note = offline ? (data.events.length || data.written.work.length || (data.ddays || []).length ? '오프라인' : `⚠ ${error}`) : null;
+    const note = offline ? (data.events.length || data.written.work.length || (data.ddays || []).length || data.supp ? '오프라인' : `⚠ ${error}`) : null;
     if (mode === 'dday') {
       if (cfg.appUrl) w.url = `${cfg.appUrl}#dday`;
       buildDday(w, data, cfg, fam, note);
+    } else if (mode === 'supp') {
+      if (cfg.appUrl) w.url = `${cfg.appUrl}#supp`;
+      buildSupp(w, data, cfg, fam, note);
     } else {
       if (fam === 'small') buildSmall(w, data);
       else if (fam === 'medium') buildMedium(w, data, cfg, note);
@@ -592,7 +705,7 @@ async function main() {
     }
   }
   // 30분마다 새로 그림 (실제 간격은 iOS가 정함)
-  w.refreshAfterDate = new Date(Date.now() + 30 * 60 * 1000);
+  w.refreshAfterDate = new Date(Date.now() + (mode === 'supp' ? 15 : 30) * 60 * 1000); // 영양제는 체크가 자주 바뀌어서 더 자주
   if (config.runsInWidget) Script.setWidget(w);
   else if (fam === 'medium') await w.presentMedium();
   else if (fam === 'small') await w.presentSmall();

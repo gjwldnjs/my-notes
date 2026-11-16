@@ -117,6 +117,6 @@ function html(n) {
 const [W, H] = SIZES[family];
 const body = html(result).replace('flex:none', `width:${W}px;height:${H}px;border-radius:22px;box-shadow:0 8px 30px rgba(0,0,0,.2)`);
 fs.mkdirSync(path.join(here, 'out'), { recursive: true });
-const out = path.join(here, 'out', `widget-${process.env.WIDGET_PARAM ? 'dday-' : ''}${family}${dark ? '-dark' : ''}.html`);
+const out = path.join(here, 'out', `widget-${process.env.WIDGET_PARAM ? process.env.WIDGET_PARAM.replace(/[^a-z]/gi, '').toLowerCase() + '-' : ''}${family}${dark ? '-dark' : ''}.html`);
 fs.writeFileSync(out, `<!doctype html><meta charset="utf-8"><body style="margin:0;padding:30px;background:${dark ? '#000' : '#e9e6df'};font-family:-apple-system,'Malgun Gothic',sans-serif">${body}</body>`);
 console.log(JSON.stringify({ out, texts, links, refresh: !!result.refreshAfterDate, url: result.url }));
