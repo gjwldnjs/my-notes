@@ -757,7 +757,6 @@ function openProfileWindow() {
 }
 
 // ---------- 화면 테마 (이 기기에만 저장: 기기마다 다르게 두는 게 자연스러워서 계정 설정에 넣지 않음) ----------
-const THEMES = [['system', '시스템 따름'], ['light', '라이트'], ['dark', '다크']];
 const getTheme = () => { try { return localStorage.getItem('theme') || 'system'; } catch { return 'system'; } };
 function setTheme(t) {
   try { localStorage.setItem('theme', t); } catch {}
@@ -767,12 +766,15 @@ function setTheme(t) {
   const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#1d1c1a' : '#faf9f6'; });
 }
-function themeSeg() {
-  const seg = h('div', { class: 'seg wide', role: 'group', 'aria-label': '화면 테마' });
-  const paint = () => seg.replaceChildren(...THEMES.map(([k, label]) =>
-    h('button', { type: 'button', class: k === getTheme() ? 'on' : '', onclick: () => { setTheme(k); paint(); } }, label)));
-  paint();
-  return seg;
+// 상단 버튼: 누를 때마다 라이트 ↔ 다크. 처음(한 번도 안 눌렀을 때)은 휴대폰·PC 설정을 따른다
+const isDark = () => { const t = getTheme(); return t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches); };
+function paintThemeBtn() {
+  const b = $('#btn-theme');
+  if (!b) return;
+  const dark = isDark();
+  const label = dark ? '라이트 모드로' : '다크 모드로';
+  b.replaceChildren(icon(dark ? 'sun' : 'moon'));
+  b.title = label; b.setAttribute('aria-label', label);
 }
 
 function settingsDialog() {
@@ -823,7 +825,6 @@ function settingsDialog() {
         h('span', { class: 'small muted' }, S.PROFILE ? `지금 창: "${S.PROFILE}"` : '이 창은 그대로 두고, 따로 로그인하는 새 창을 열어요'))),
     h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '보기'),
-      h('div', { class: 'row' }, h('span', { class: 'small' }, '화면 테마'), themeSeg()),
       h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: state.settings.showNumbers, onchange: (e) => S.setSettings({ showNumbers: e.target.checked }) }), '목록에 번호(1. 2. 3.) 붙이기'),
       h('p', { class: 'small muted', style: 'margin:10px 0 4px' }, '캘린더에 표시 (공휴일은 늘 표시)'),
       ...DAY_KINDS.map(([k, label]) => h('label', { class: 'chk' },
@@ -982,6 +983,9 @@ async function init() {
     if (!res.hidden && document.activeElement === q) renderResults();
   });
   setTheme(getTheme());
+  paintThemeBtn();
+  $('#btn-theme').onclick = () => { setTheme(isDark() ? 'light' : 'dark'); paintThemeBtn(); };
+  matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (getTheme() === 'system') { setTheme('system'); paintThemeBtn(); } });
   if (S.PROFILE) { document.title = `내 메모장 (${S.PROFILE})`; const b = $('.brand-name'); if (b) b.textContent = `내 메모장 · ${S.PROFILE}`; }
   // 체크박스는 누르는 순간의 "글쓰기 칸 활성화"를 막는다 → 체크만 되고 아이폰 키보드가 올라오지 않는다 (click은 그대로 와서 체크됨)
   document.addEventListener('mousedown', (e) => { if (e.target.matches('.pm input[type="checkbox"]')) e.preventDefault(); });
