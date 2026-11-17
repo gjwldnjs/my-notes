@@ -109,7 +109,13 @@ export function ddayEl(n) {
     const repLbl = h('label', {}, h('span', {}, '반복'), rep);
     // 기간으로: 시작일 + 숫자 + 단위 → 끝나는 날 미리 보기
     const from = h('input', { class: 'in', type: 'date', value: v.from || ymd(new Date()) });
-    const lenN = h('input', { class: 'in', type: 'number', min: '0', inputmode: 'numeric', value: v.len?.n ?? 6, 'aria-label': '기간' });
+    const lenN = h('input', { class: 'in', type: 'text', inputmode: 'numeric', pattern: '[0-9]*', value: v.len?.n ?? 6, 'aria-label': '기간 숫자' });
+    lenN.addEventListener('input', () => { const c = lenN.value.replace(/\D/g, ''); if (c !== lenN.value) lenN.value = c; });
+    const step = (k) => { lenN.value = String(Math.max(1, (parseInt(lenN.value, 10) || 0) + k)); paintPreview(); };
+    const stepper = h('div', { class: 'stepper' },
+      h('button', { type: 'button', class: 'btn', 'aria-label': '하나 줄이기', onclick: () => step(-1) }, '−'),
+      lenN,
+      h('button', { type: 'button', class: 'btn', 'aria-label': '하나 늘리기', onclick: () => step(1) }, '+'));
     const lenU = h('select', { class: 'in', 'aria-label': '단위' }, Object.entries(UNIT).map(([k, l]) => h('option', { value: k, selected: k === (v.len?.unit || 'm') || null }, l)));
     const preview = h('p', { class: 'small muted dday-preview' });
     const target = () => (from.value && lenN.value !== '' ? ymd(addLen(from.value, { n: +lenN.value, unit: lenU.value })) : '');
@@ -121,11 +127,11 @@ export function ddayEl(n) {
     const lenRow = h('div', { class: 'dday-len' },
       h('div', { class: 'row2' },
         h('label', {}, h('span', {}, '시작한 날 (예: 개봉일·가입일)'), from),
-        h('label', {}, h('span', {}, '기간'), h('div', { class: 'len-in' }, lenN, lenU))),
+        h('div', { class: 'len-field' }, h('span', {}, '기간'), h('div', { class: 'len-in' }, stepper, lenU))),
       preview);
     const seg = h('div', { class: 'seg wide', role: 'group', 'aria-label': '세는 방법' });
     const paintSeg = () => {
-      seg.replaceChildren(...[['until', 'D-day (남은 날)'], ['since', '며칠째 (지난 날)']].map(([k, l]) =>
+      seg.replaceChildren(...[['since', '며칠째 (지난 날)'], ['until', 'D-day (남은 날)']].map(([k, l]) =>
         h('button', { type: 'button', class: k === mode ? 'on' : '', onclick: () => { mode = k; paintSeg(); } }, l)));
       dateLbl.textContent = mode === 'since' ? '시작한 날 (이날이 1일)' : '날짜';
       repLbl.hidden = mode === 'since';

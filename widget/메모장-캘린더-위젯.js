@@ -147,7 +147,26 @@ function ddayInfo(it, t) {
     return [y ? `${y}년` : '', m % 12 ? `${m % 12}개월` : '', d ? `${d}일` : ''].filter(Boolean).join(' ') || '0일';
   };
   const remain = it.from || Math.abs(left) > 31 ? (left > 0 ? ` · ${span(t, when)} 남음` : left < 0 ? ` · ${span(when, t)} 지남` : '') : '';
-  return { big, sub: `${fmtD(when)}${it.from ? '까지' : ''}${rep}${remain}`, sort: left < 0 ? 1e9 - left : left, cls: left < 0 ? 'past' : left <= 3 ? 'soon' : '' };
+  // 진행 막대 (기간으로 정한 항목만, 앱과 같은 셈: 반복으로 넘어갔으면 그 회차 기준)
+  let pct = null;
+  if (it.from && it.len) {
+    const f0 = parseKey(it.from);
+    const start = when.getTime() === base.getTime() ? f0 : k ? addMonths(when, -k) : new Date(when.getTime() - (base - f0));
+    const total = diff(start, when);
+    pct = total > 0 ? Math.min(1, Math.max(0, diff(start, t) / total)) : 1;
+  }
+  return { big, sub: `${fmtD(when)}${it.from ? '까지' : ''}${rep}${remain}`, pct, sort: left < 0 ? 1e9 - left : left, cls: left < 0 ? 'past' : left <= 3 ? 'soon' : '' };
+}
+// 진행 막대: 채운 칸 + 남은 칸 (두 칸 폭의 합 = 전체 폭이라 가운데로 밀리지 않는다)
+function ddayBar(stack, pct, width, color) {
+  const b = stack.addStack();
+  b.size = new Size(width, 4);
+  b.cornerRadius = 2;
+  b.backgroundColor = C.line;
+  const fw = Math.round(width * pct);
+  if (fw > 0) { const f = b.addStack(); f.size = new Size(fw, 4); f.backgroundColor = color; }
+  if (width - fw > 0) { const r = b.addStack(); r.size = new Size(width - fw, 4); }
+  return b;
 }
 const ddayColor = (cls) => (cls === 'since' ? C.sun : cls === 'soon' ? C.soon : cls === 'past' ? C.muted : C.accent);
 
@@ -625,6 +644,7 @@ function buildDday(w, data, cfg, fam, note) {
     big.minimumScaleFactor = 0.5;
     w.addSpacer(2);
     txt(w, o.info.sub, 10.5, C.muted);
+    if (o.info.pct != null) { w.addSpacer(6); ddayBar(w, o.info.pct, 142, ddayColor(o.info.cls)); }
     w.addSpacer();
     if (list[1]) {
       const r = w.addStack();
@@ -659,6 +679,7 @@ function buildDday(w, data, cfg, fam, note) {
     col.layoutVertically();
     txt(col, o.it.name, large ? 13.5 : 12.5, o.info.cls === 'past' ? C.muted : C.text, { bold: true });
     if (large) txt(col, o.info.sub, 10.5, C.muted);
+    if (o.info.pct != null) { col.addSpacer(3); ddayBar(col, o.info.pct, large ? 150 : 110, ddayColor(o.info.cls)); }
     r.addSpacer();
     if (!large) txt(r, o.info.sub, 10, C.muted);
   });
