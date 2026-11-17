@@ -139,7 +139,15 @@ function ddayInfo(it, t) {
   const left = diff(t, when);
   const big = left > 0 ? `D-${left}` : left === 0 ? 'D-Day' : `D+${-left}`;
   const rep = DREPEAT[it.repeat] ? ` · ${DREPEAT[it.repeat]}` : '';
-  return { big, sub: `${fmtD(when)}${rep}`, sort: left < 0 ? 1e9 - left : left, cls: left < 0 ? 'past' : left <= 3 ? 'soon' : '' };
+  // 기간으로 정했거나 한 달 넘게 남으면 "3개월 14일 남음"도 (앱과 같은 셈)
+  const span = (a, b) => {
+    let m = (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+    if (addMonths(a, m) > b) m--;
+    const d = diff(addMonths(a, m), b), y = Math.floor(m / 12);
+    return [y ? `${y}년` : '', m % 12 ? `${m % 12}개월` : '', d ? `${d}일` : ''].filter(Boolean).join(' ') || '0일';
+  };
+  const remain = it.from || Math.abs(left) > 31 ? (left > 0 ? ` · ${span(t, when)} 남음` : left < 0 ? ` · ${span(when, t)} 지남` : '') : '';
+  return { big, sub: `${fmtD(when)}${it.from ? '까지' : ''}${rep}${remain}`, sort: left < 0 ? 1e9 - left : left, cls: left < 0 ? 'past' : left <= 3 ? 'soon' : '' };
 }
 const ddayColor = (cls) => (cls === 'since' ? C.sun : cls === 'soon' ? C.soon : cls === 'past' ? C.muted : C.accent);
 

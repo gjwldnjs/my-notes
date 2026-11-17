@@ -407,6 +407,19 @@ label.chk input { width: 17px; height: 17px; accent-color: var(--accent); }
 .dday-name { font-weight: 600; font-size: 15px; }
 .dday-sub { font-size: 12.5px; color: var(--muted); }
 .dday-form { width: 100%; }
+.dday-txt { flex: 1; }
+.dday-remain { font-size: 13px; font-weight: 600; color: var(--text); }
+.dday-card.past .dday-remain { color: var(--muted); }
+.dday-bar { display: block; height: 4px; border-radius: 2px; background: var(--line); margin-top: 4px; overflow: hidden; max-width: 260px; }
+.dday-bar > span { display: block; height: 100%; background: var(--accent); }
+.dday-card.soon .dday-bar > span { background: #d9822b; }
+.dday-card.past .dday-bar > span { background: var(--muted); }
+.dday-len { display: flex; flex-direction: column; gap: 8px; }
+.dday-len[hidden], .dday-form .row2[hidden] { display: none; }
+.len-in { display: flex; gap: 6px; }
+.len-in input { flex: 1; min-width: 0; }
+.len-in select { width: 84px; flex: none; }
+.dday-preview { margin: 0 0 0 2px; }
 .supp-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .supp h3 { margin: 0; font-size: 15px; }
 .supp-chips { display: flex; flex-wrap: wrap; gap: 8px; }
