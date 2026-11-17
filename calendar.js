@@ -3,10 +3,11 @@ import { h, icon, iconBtn, ymd, pad, WD } from './dom.js';
 import * as S from './store.js';
 import { state } from './store.js';
 import { holidayOf, observancesOf } from './holidays.js';
+import * as Gcal from './gcal.js';
 
 export const COLORS = ['green', 'blue', 'red', 'yellow', 'purple'];
 const COLOR_NAME = { green: '초록', blue: '파랑', red: '빨강', yellow: '노랑', purple: '보라' };
-export const REPEAT = { none: '반복 안 함', weekly: '매주', monthly: '매달', yearly: '매년' };
+export const REPEAT = { none: '반복 안 함', daily: '매일', weekly: '매주', monthly: '매달', yearly: '매년' };
 
 export const parseKey = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 const addDays = (d, k) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + k);
@@ -17,6 +18,7 @@ function startsOn(ev, s, sk) {
   if (sk < ev.date || (ev.skip || []).includes(sk)) return false;
   const o = parseKey(ev.date);
   switch (ev.repeat) {
+    case 'daily': return true;
     case 'weekly': return dayDiff(ev.date, sk) % 7 === 0;
     case 'monthly': return s.getDate() === o.getDate();
     case 'yearly': return s.getDate() === o.getDate() && s.getMonth() === o.getMonth();
@@ -92,7 +94,37 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
     d.events ||= [];
     fn(d);
     S.setData(n.id, d);
+    Gcal.schedule();
   };
+  // 지우기: 구글 짝이 있으면 구글에서도 지우도록 적어 둔다
+  const remove = (d, id) => {
+    Gcal.noteDelete(d, d.events.find((e) => e.id === id));
+    d.events = d.events.filter((e) => e.id !== id);
+  };
+
+  // 구글 캘린더 상태 버튼 (상태가 바뀌면 이 버튼만 다시 그린다)
+  const gBtn = h('button', { type: 'button', class: 'btn sm gcal-btn' });
+  const paintG = () => {
+    const st = Gcal.getStatus();
+    let label, cls = '', tip = '';
+    if (!Gcal.isOn()) label = '구글 캘린더 연결';
+    else if (st.busy) label = '구글 맞추는 중…';
+    else if (!Gcal.hasToken() || st.error === 'auth') { label = '구글 다시 연결'; cls = 'warn'; tip = '구글 연결은 1시간마다 다시 눌러야 해요'; }
+    else if (st.error) { label = '구글 오류'; cls = 'warn'; tip = st.error; }
+    else { const t = st.at ? new Date(st.at) : null; label = t ? `구글 ✓ ${pad(t.getHours())}:${pad(t.getMinutes())}` : '구글 ✓'; tip = `${Gcal.email()} · 누르면 지금 맞추기`; }
+    gBtn.className = `btn sm gcal-btn ${cls}`;
+    gBtn.title = tip;
+    gBtn.replaceChildren(icon('sync'), label);
+  };
+  gBtn.onclick = async () => {
+    if (Gcal.getStatus().busy) return;
+    if (!Gcal.isOn() || !Gcal.hasToken() || Gcal.getStatus().error === 'auth') {
+      try { await Gcal.connect(); } catch (e) { if (!/popup-closed|cancelled-popup/.test(e.code || '')) alert('구글 연결에 실패했어요: ' + (e.message || e)); paintG(); return; }
+    }
+    await Gcal.sync();
+    if (Gcal.getStatus().error && Gcal.getStatus().error !== 'auth') alert('구글 동기화 오류: ' + Gcal.getStatus().error);
+  };
+  Gcal.onStatus(() => { if (gBtn.isConnected) paintG(); });
 
   function marks(key) {
     const out = [];
@@ -147,7 +179,8 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
         iconBtn('back', '이전 달', () => shift(-1)),
         h('h3', {}, `${y}년 ${m}월`),
         iconBtn('chev', '다음 달', () => shift(1)),
-        h('button', { type: 'button', class: 'btn sm', onclick: () => { calGoto(today); editing = null; paint(); } }, '오늘')),
+        h('button', { type: 'button', class: 'btn sm', onclick: () => { calGoto(today); editing = null; paint(); } }, '오늘'),
+        (paintG(), gBtn)),
       h('div', { class: 'cal-wrap' },
         h('div', { class: 'cal-grid' },
           WD.map((w, i) => h('div', { class: `cal-wd ${i === 0 ? 'sun' : i === 6 ? 'sat' : ''}` }, w)),
@@ -195,19 +228,19 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
       h('span', { class: 'bar' }),
       h('div', { class: 'grow' },
         h('div', { class: 'ev-title' }, ev.time ? h('span', { class: 'ev-time' }, ev.time) : null, ev.title || '(제목 없음)'),
-        (repeat || range || ev.memo) ? h('div', { class: 'small muted' }, [repeat ? REPEAT[ev.repeat] : '', range, ev.memo || ''].filter(Boolean).join(' · ')) : null),
+        (repeat || range || ev.memo || ev.gRule) ? h('div', { class: 'small muted' }, [repeat ? REPEAT[ev.repeat] : '', ev.gRule ? '구글의 특별한 반복 일정 (앱에는 첫 회만 보여요)' : '', range, ev.memo || ''].filter(Boolean).join(' · ')) : null),
       iconBtn('edit', '고치기', () => { editing = { id: ev.id }; confirmDel = null; paint(); }),
       iconBtn('trash', '삭제', () => {
         if (repeat) { confirmDel = ev.id; paint(); return; }
-        save((d) => { d.events = d.events.filter((e) => e.id !== ev.id); });
+        save((d) => remove(d, ev.id));
         paint();
       }, 'danger'));
     if (confirmDel !== ev.id) return li;
     return h('li', { class: 'ev-confirm' }, li,
       h('div', { class: 'row' },
         h('span', { class: 'small' }, '반복 일정이에요.'),
-        h('button', { type: 'button', class: 'btn sm', onclick: () => { save((d) => { const e = d.events.find((x) => x.id === ev.id); e.skip = [...new Set([...(e.skip || []), o.startKey])]; }); confirmDel = null; paint(); } }, '이 날만 삭제'),
-        h('button', { type: 'button', class: 'btn sm danger', onclick: () => { save((d) => { d.events = d.events.filter((e) => e.id !== ev.id); }); confirmDel = null; paint(); } }, '전체 삭제'),
+        h('button', { type: 'button', class: 'btn sm', onclick: () => { save((d) => { const e = d.events.find((x) => x.id === ev.id); e.skip = [...new Set([...(e.skip || []), o.startKey])]; e.mt = Date.now(); }); confirmDel = null; paint(); } }, '이 날만 삭제'),
+        h('button', { type: 'button', class: 'btn sm danger', onclick: () => { save((d) => remove(d, ev.id)); confirmDel = null; paint(); } }, '전체 삭제'),
         h('button', { type: 'button', class: 'btn sm', onclick: () => { confirmDel = null; paint(); } }, '취소')));
   }
 
@@ -256,7 +289,8 @@ export function calEl(n, { openDaily, openSupp, onMonth }) {
       const t = (fromTitle ? fromTitle.rest : title.value).trim();
       if (!t) { title.focus(); return; }
       if (!date.value) { date.focus(); return; }
-      const rec = { title: t, date: date.value, end: end.value && end.value > date.value ? end.value : '', time: time.value, repeat: rep.value, color, memo: memo.value.trim() };
+      const rec = { title: t, date: date.value, end: end.value && end.value > date.value ? end.value : '', time: time.value, repeat: rep.value, color, memo: memo.value.trim(), mt: Date.now() };
+      if (ev && rec.repeat !== 'none') rec.gRule = null; // 앱에서 반복을 새로 고르면 구글의 원래 규칙 대신 이것으로
       save((d) => {
         const cur = ev && d.events.find((e) => e.id === ev.id);
         if (cur) Object.assign(cur, rec);

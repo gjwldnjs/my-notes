@@ -91,6 +91,7 @@ function startsOn(ev, s, sk) {
   if (sk < ev.date || (ev.skip || []).includes(sk)) return false;
   const o = parseKey(ev.date);
   switch (ev.repeat) {
+    case 'daily': return true;
     case 'weekly': return dayDiff(ev.date, sk) % 7 === 0;
     case 'monthly': return s.getDate() === o.getDate();
     case 'yearly': return s.getDate() === o.getDate() && s.getMonth() === o.getMonth();

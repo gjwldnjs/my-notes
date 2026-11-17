@@ -5,6 +5,7 @@ import { state } from './store.js';
 import * as Cloud from './cloud.js';
 import { suppEl } from './supp.js';
 import { ddayEl } from './dday.js';
+import * as Gcal from './gcal.js';
 import { calEl, calGoto, calMonth } from './calendar.js';
 import { DAY_KINDS } from './holidays.js';
 import { createEditor, getMarkdown, setMarkdown, focusFirstSlot } from './vendor/editor.js';
@@ -832,6 +833,16 @@ function settingsDialog() {
         h('input', { type: 'checkbox', checked: (state.settings.showDays || {})[k] !== false,
           onchange: (e) => { S.setSettings({ showDays: { ...(state.settings.showDays || {}), [k]: e.target.checked } }); ed.cal?.repaint(); } }), label))),
     h('section', { class: 'set-sec' },
+      h('h3', { class: 'sec-h' }, '구글 캘린더'),
+      Gcal.isOn()
+        ? h('div', { class: 'row' },
+          h('span', { class: 'small grow' }, `연결됨 · ${Gcal.email()}`),
+          h('button', { type: 'button', class: 'btn', onclick: (e) => {
+            if (!confirm('구글 캘린더 연결을 끊을까요? 이미 맞춰 둔 일정은 양쪽에 그대로 남고, 앞으로는 주고받지 않아요.')) return;
+            Gcal.disconnect(); ed.cal?.repaint(); e.currentTarget.closest('.row').replaceWith(h('p', { class: 'small muted' }, '연결을 끊었어요.'));
+          } }, '연결 끊기'))
+        : h('p', { class: 'small muted' }, '캘린더 화면 위쪽의 "구글 캘린더 연결"을 누르면 일정을 서로 주고받아요.')),
+    h('section', { class: 'set-sec' },
       h('h3', { class: 'sec-h' }, '일지 템플릿'),
       h('p', { class: 'small muted' }, '"오늘 업무일지·일기"로 새로 만들 때 들어가는 내용이에요.'),
       h('div', { class: 'stack' }, h('label', { class: 'small' }, '업무일지'), tplWork, h('label', { class: 'small' }, '일기'), tplDiary)),
@@ -985,6 +996,7 @@ async function init() {
   });
   setTheme(getTheme());
   paintThemeBtn();
+  Gcal.startAuto();
   $('#btn-theme').onclick = () => { setTheme(isDark() ? 'light' : 'dark'); paintThemeBtn(); };
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (getTheme() === 'system') { setTheme('system'); paintThemeBtn(); } });
   if (S.PROFILE) { document.title = `내 메모장 (${S.PROFILE})`; const b = $('.brand-name'); if (b) b.textContent = `내 메모장 · ${S.PROFILE}`; }
