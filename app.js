@@ -547,12 +547,31 @@ function dailyInfo(id) {
   const kind = m[1] === state.settings.workFolder ? 'work' : m[1] === state.settings.diaryFolder ? 'diary' : null;
   return kind ? { kind, key: m[2] } : null;
 }
+// 실제로 쓴 날들 (템플릿만 있고 손대지 않은 날은 시각이 1이라 빠진다)
+function writtenDays(kind) {
+  const pre = `${state.settings[kind === 'work' ? 'workFolder' : 'diaryFolder']}~`;
+  return Object.values(state.nodes)
+    .filter((n) => n.type === 'note' && n.id.startsWith(pre) && /^\d{4}-\d{2}-\d{2}$/.test(n.id.slice(pre.length)) && n.contentAt > 1 && !S.inTrash(n.id))
+    .map((n) => n.id.slice(pre.length));
+}
+// 어제 쪽: 쓴 날 중 바로 앞 날 (안 쓴 날은 만들지 않고 건너뛴다)
+// 내일 쪽: 쓴 날 중 바로 다음 날, 또는 오늘 중 가까운 쪽. 둘 다 없으면(오늘 이후) 다음 날 새로 쓰기
 function stepDay(dir) {
   const info = dailyInfo(ui.note);
   if (!info) return;
+  const cur = info.key, today = ymd(new Date());
+  const days = writtenDays(info.kind);
+  let key;
+  if (dir < 0) {
+    key = days.filter((k) => k < cur).sort().pop();
+    if (!key) { toast(`이전에 쓴 ${info.kind === 'work' ? '업무일지' : '일기'}가 없어요`); return; }
+  } else {
+    key = [...days.filter((k) => k > cur), ...(today > cur ? [today] : [])].sort()[0];
+    if (!key) { const [y, m, d] = cur.split('-').map(Number); key = ymd(new Date(y, m - 1, d + 1)); }
+  }
   ed.flush?.();
-  const [y, m, d] = info.key.split('-').map(Number);
-  openDaily(info.kind, new Date(y, m - 1, d + dir), { focus: false });
+  const [y, m, d] = key.split('-').map(Number);
+  openDaily(info.kind, new Date(y, m - 1, d), { focus: false });
   const inner = $('#editor .ed-inner');
   if (inner) inner.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
 }
@@ -572,8 +591,14 @@ function setupDaySwipe() {
   // 관성은 점점 약해지기만 한다 → 약해지던 움직임이 다시 세지거나 방향이 바뀌면 "새로 민 것"으로 보고 바로 받는다
   let acc = 0, locked = false, quiet = 0, last = 0, peak = 0, dir = 0, decayed = false, lockAt = 0;
   const reset = () => { acc = 0; locked = false; last = 0; peak = 0; decayed = false; };
-  box.addEventListener('wheel', (e) => {
-    if (!dailyInfo(ui.note) || e.ctrlKey) return;
+  // 날짜를 넘기면 편집 칸 안쪽이 새로 그려지는데, 브라우저는 마우스를 움직이기 전까지 그 자리를 다시 확인하지 않아
+  // 신호가 편집 칸으로 오지 않을 때가 있다 → 창 전체에서 받고, 커서가 편집 칸 위에 있는지 좌표로 확인한다
+  const overEditor = (e) => {
+    const r = box.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  };
+  window.addEventListener('wheel', (e) => {
+    if (!dailyInfo(ui.note) || e.ctrlKey || !overEditor(e) || document.querySelector('dialog[open]')) return;
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     if (scrollsX(e.target, e.deltaX)) return;
     e.preventDefault(); // 브라우저의 "뒤로 가기" 몸짓 막기
