@@ -527,7 +527,7 @@ function ensureChild(id, type, name, parent, pos, content = '') {
   return { n: S.create({ id, type, name, parent, pos, content, at }), isNew: true };
 }
 
-function openDaily(kind, date = new Date()) {
+function openDaily(kind, date = new Date(), { focus = true } = {}) {
   const work = kind === 'work';
   const root = ensureRoot(work ? 'workFolder' : 'diaryFolder', work ? '업무일지' : '일기');
   const y = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate();
@@ -536,7 +536,73 @@ function openDaily(kind, date = new Date()) {
   const tpl = (work ? state.settings.workTemplate : state.settings.diaryTemplate) || '';
   const { n, isNew } = ensureChild(`${root.id}~${ymd(date)}`, 'note', `${m}월 ${d}일 (${WD[date.getDay()]})`, mf.id, d, tpl);
   openNote(n.id);
-  if (isNew && ed.editor) focusFirstSlot(ed.editor); // 템플릿 첫 칸으로 커서 이동
+  if (focus && isNew && ed.editor) focusFirstSlot(ed.editor); // 템플릿 첫 칸으로 커서 이동
+}
+
+// ---------- 업무일지·일기: 좌우로 밀어서 어제·내일 ----------
+// PC: 터치패드 두 손가락으로 옆으로 / 휴대폰: 손가락으로 옆으로. 왼쪽으로 밀면 내일, 오른쪽으로 밀면 어제
+function dailyInfo(id) {
+  const m = String(id || '').match(/^(.*)~(\d{4}-\d{2}-\d{2})$/);
+  if (!m) return null;
+  const kind = m[1] === state.settings.workFolder ? 'work' : m[1] === state.settings.diaryFolder ? 'diary' : null;
+  return kind ? { kind, key: m[2] } : null;
+}
+function stepDay(dir) {
+  const info = dailyInfo(ui.note);
+  if (!info) return;
+  ed.flush?.();
+  const [y, m, d] = info.key.split('-').map(Number);
+  openDaily(info.kind, new Date(y, m - 1, d + dir), { focus: false });
+  const inner = $('#editor .ed-inner');
+  if (inner) inner.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
+}
+// 표·코드처럼 그 안에서 옆으로 스크롤되는 곳이면 날짜를 넘기지 않는다 (dx > 0: 오른쪽 내용을 보려는 쪽)
+function scrollsX(el, dx) {
+  for (let x = el; x && x.id !== 'editor'; x = x.parentElement) {
+    if (x.scrollWidth <= x.clientWidth + 1) continue;
+    const ov = getComputedStyle(x).overflowX;
+    if (ov !== 'auto' && ov !== 'scroll') continue;
+    if (dx > 0 ? x.scrollLeft + x.clientWidth < x.scrollWidth - 1 : x.scrollLeft > 0) return true;
+  }
+  return false;
+}
+function setupDaySwipe() {
+  const box = $('#editor');
+  // 터치패드: 옆으로 민 양을 모아서 한 번 넘기고, 손을 뗀 뒤 관성으로 오는 움직임이 멈출 때까지는 더 넘기지 않는다
+  let acc = 0, locked = false, quiet = 0;
+  box.addEventListener('wheel', (e) => {
+    if (!dailyInfo(ui.note) || e.ctrlKey) return;
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    if (scrollsX(e.target, e.deltaX)) return;
+    e.preventDefault(); // 브라우저의 "뒤로 가기" 몸짓 막기
+    clearTimeout(quiet);
+    quiet = setTimeout(() => { acc = 0; locked = false; }, 300);
+    if (locked) return;
+    acc += e.deltaX;
+    if (Math.abs(acc) > 110) { locked = true; stepDay(acc > 0 ? 1 : -1); acc = 0; }
+  }, { passive: false });
+  // 휴대폰: 짧고 빠르게 옆으로 민 것만 (위아래 스크롤·글자 고르기와 헷갈리지 않게)
+  let st = null;
+  box.addEventListener('touchstart', (e) => {
+    st = null;
+    if (e.touches.length !== 1 || !dailyInfo(ui.note)) return;
+    const t = e.touches[0];
+    if (t.clientX < 24 || t.clientX > innerWidth - 24) return; // 화면 가장자리는 브라우저 뒤로 가기 몸짓
+    st = { x: t.clientX, y: t.clientY, at: Date.now(), el: e.target };
+  }, { passive: true });
+  box.addEventListener('touchend', (e) => {
+    const s = st;
+    st = null;
+    if (!s) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x, dy = t.clientY - s.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - s.at > 700) return;
+    if (scrollsX(s.el, -dx)) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return; // 글자를 고르던 중
+    stepDay(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  box.addEventListener('touchcancel', () => { st = null; }, { passive: true });
 }
 
 // 메모 폴더 바로 아래에 오늘 날짜 제목으로 새 메모 (하루에 여러 장이면 뒤에 2, 3…)
@@ -997,6 +1063,7 @@ async function init() {
   setTheme(getTheme());
   paintThemeBtn();
   Gcal.startAuto();
+  setupDaySwipe();
   $('#btn-theme').onclick = () => { setTheme(isDark() ? 'light' : 'dark'); paintThemeBtn(); };
   matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => { if (getTheme() === 'system') { setTheme('system'); paintThemeBtn(); } });
   if (S.PROFILE) { document.title = `내 메모장 (${S.PROFILE})`; const b = $('.brand-name'); if (b) b.textContent = `내 메모장 · ${S.PROFILE}`; }

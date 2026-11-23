@@ -644,3 +644,10 @@ select.in { appearance: auto; }
 @media (max-width: 560px) {
   .dday-len .row2 { grid-template-columns: 1fr; }
 }
+/* 업무일지·일기 좌우로 넘길 때 살짝 밀려 들어오기 */
+html, body { overscroll-behavior-x: none; }
+@keyframes slide-from-right { from { transform: translateX(28px); opacity: .35; } to { transform: none; opacity: 1; } }
+@keyframes slide-from-left { from { transform: translateX(-28px); opacity: .35; } to { transform: none; opacity: 1; } }
+.ed-inner.slide-next { animation: slide-from-right .2s ease-out; }
+.ed-inner.slide-prev { animation: slide-from-left .2s ease-out; }
+@media (prefers-reduced-motion: reduce) { .ed-inner.slide-next, .ed-inner.slide-prev { animation: none; } }
