@@ -568,18 +568,30 @@ function scrollsX(el, dx) {
 }
 function setupDaySwipe() {
   const box = $('#editor');
-  // 터치패드: 옆으로 민 양을 모아서 한 번 넘기고, 손을 뗀 뒤 관성으로 오는 움직임이 멈출 때까지는 더 넘기지 않는다
-  let acc = 0, locked = false, quiet = 0;
+  // 터치패드: 옆으로 민 양을 모아서 한 번 넘긴다. 넘긴 뒤 손을 떼도 관성으로 움직임이 한동안 더 오는데,
+  // 관성은 점점 약해지기만 한다 → 약해지던 움직임이 다시 세지거나 방향이 바뀌면 "새로 민 것"으로 보고 바로 받는다
+  let acc = 0, locked = false, quiet = 0, last = 0, peak = 0, dir = 0, decayed = false, lockAt = 0;
+  const reset = () => { acc = 0; locked = false; last = 0; peak = 0; decayed = false; };
   box.addEventListener('wheel', (e) => {
     if (!dailyInfo(ui.note) || e.ctrlKey) return;
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     if (scrollsX(e.target, e.deltaX)) return;
     e.preventDefault(); // 브라우저의 "뒤로 가기" 몸짓 막기
+    const ad = Math.abs(e.deltaX), d = Math.sign(e.deltaX);
     clearTimeout(quiet);
-    quiet = setTimeout(() => { acc = 0; locked = false; }, 300);
-    if (locked) return;
+    quiet = setTimeout(reset, 120); // 움직임이 잠깐이라도 멈추면 바로 다음을 받는다
+    if (locked) {
+      peak = Math.max(peak, ad);
+      if (ad < peak * 0.6) decayed = true;
+      const fresh = d !== dir || (decayed && ad > 6 && ad > last * 1.5 && Date.now() - lockAt > 120);
+      last = ad;
+      if (!fresh) return;
+      reset();
+    }
+    last = ad;
+    dir = d;
     acc += e.deltaX;
-    if (Math.abs(acc) > 110) { locked = true; stepDay(acc > 0 ? 1 : -1); acc = 0; }
+    if (Math.abs(acc) > 90) { locked = true; lockAt = Date.now(); peak = ad; acc = 0; stepDay(d > 0 ? 1 : -1); }
   }, { passive: false });
   // 휴대폰: 짧고 빠르게 옆으로 민 것만 (위아래 스크롤·글자 고르기와 헷갈리지 않게)
   let st = null;
