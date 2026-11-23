@@ -539,39 +539,71 @@ function openDaily(kind, date = new Date(), { focus = true } = {}) {
   if (focus && isNew && ed.editor) focusFirstSlot(ed.editor); // 템플릿 첫 칸으로 커서 이동
 }
 
-// ---------- 업무일지·일기: 좌우로 밀어서 어제·내일 ----------
-// PC: 터치패드 두 손가락으로 옆으로 / 휴대폰: 손가락으로 옆으로. 왼쪽으로 밀면 내일, 오른쪽으로 밀면 어제
-function dailyInfo(id) {
-  const m = String(id || '').match(/^(.*)~(\d{4}-\d{2}-\d{2})$/);
-  if (!m) return null;
-  const kind = m[1] === state.settings.workFolder ? 'work' : m[1] === state.settings.diaryFolder ? 'diary' : null;
-  return kind ? { kind, key: m[2] } : null;
+// ---------- 좌우로 밀어서 앞·뒤 메모로 ----------
+// PC: 터치패드 두 손가락으로 옆으로 / 휴대폰: 손가락으로 옆으로. 왼쪽으로 밀면 다음(내일), 오른쪽으로 밀면 이전(어제)
+// 업무일지·일기 폴더 안: 어떻게 만든 메모든 날짜순으로 (월 폴더를 넘어서도). 그 밖의 폴더: 같은 폴더 안 목록 순서대로
+function swipeCtx(id) {
+  const n = S.get(id);
+  if (!n || n.type !== 'note' || (n.kind || 'md') !== 'md' || n.parent == null || S.inTrash(id)) return null;
+  for (const [kind, key] of [['work', 'workFolder'], ['diary', 'diaryFolder']]) {
+    const root = state.settings[key];
+    if (root && S.isInside(n.parent, root)) return { type: 'daily', kind, root };
+  }
+  return { type: 'folder', parent: n.parent };
 }
-// 실제로 쓴 날들 (템플릿만 있고 손대지 않은 날은 시각이 1이라 빠진다)
-function writtenDays(kind) {
-  const pre = `${state.settings[kind === 'work' ? 'workFolder' : 'diaryFolder']}~`;
-  return Object.values(state.nodes)
-    .filter((n) => n.type === 'note' && n.id.startsWith(pre) && /^\d{4}-\d{2}-\d{2}$/.test(n.id.slice(pre.length)) && n.contentAt > 1 && !S.inTrash(n.id))
-    .map((n) => n.id.slice(pre.length));
+// 메모의 날짜: 일지 버튼으로 만든 것은 id의 날짜, 직접 만든 것은 이름 속 날짜('11월 20일'·'2026-11-20'), 없으면 만든 날
+function dayKeyOf(n, root) {
+  const m = n.id.match(/~(\d{4}-\d{2}-\d{2})$/);
+  if (m && n.id.startsWith(root + '~')) return m[1];
+  const made = new Date(n.created || Date.now());
+  const full = (n.name || '').match(/(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/);
+  if (full) return `${full[1]}-${pad(+full[2])}-${pad(+full[3])}`;
+  const md = (n.name || '').match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);
+  if (md) {
+    // 연도는 들어 있는 연도 폴더(…~2026, …~2026-11)에서, 없으면 만든 해
+    const yf = S.ancestors(n.id).map((a) => a.id.match(/~(\d{4})(?:-\d{2})?$/)).find(Boolean);
+    return `${yf ? yf[1] : made.getFullYear()}-${pad(+md[1])}-${pad(+md[2])}`;
+  }
+  return ymd(made);
 }
-// 어제 쪽: 쓴 날 중 바로 앞 날 (안 쓴 날은 만들지 않고 건너뛴다)
-// 내일 쪽: 쓴 날 중 바로 다음 날, 또는 오늘 중 가까운 쪽. 둘 다 없으면(오늘 이후) 다음 날 새로 쓰기
+const isDailyId = (n, root) => n.id.startsWith(root + '~') && /^\d{4}-\d{2}-\d{2}$/.test(n.id.slice(root.length + 1));
 function stepDay(dir) {
-  const info = dailyInfo(ui.note);
-  if (!info) return;
-  const cur = info.key, today = ymd(new Date());
-  const days = writtenDays(info.kind);
-  let key;
-  if (dir < 0) {
-    key = days.filter((k) => k < cur).sort().pop();
-    if (!key) { toast(`이전에 쓴 ${info.kind === 'work' ? '업무일지' : '일기'}가 없어요`); return; }
+  const ctx = swipeCtx(ui.note);
+  if (!ctx) return;
+  let go = null; // () => 여는 일
+  if (ctx.type === 'folder') {
+    const list = S.kids(ctx.parent).filter((k) => k.type === 'note' && (k.kind || 'md') === 'md');
+    const i = list.findIndex((k) => k.id === ui.note);
+    const t = list[i + dir];
+    if (!t) { toast(dir > 0 ? '이 폴더의 마지막 메모예요' : '이 폴더의 첫 메모예요'); return; }
+    go = () => openNote(t.id);
   } else {
-    key = [...days.filter((k) => k > cur), ...(today > cur ? [today] : [])].sort()[0];
-    if (!key) { const [y, m, d] = cur.split('-').map(Number); key = ymd(new Date(y, m - 1, d + 1)); }
+    // 이 일지 폴더 안의 모든 메모를 날짜순으로 (같은 날이면 일지 버튼 것 먼저, 그다음 만든 순)
+    const root = ctx.root;
+    const rank = (e) => [e.key, e.daily ? 0 : 1, e.created];
+    const cmp = (a, b) => { const x = rank(a), y = rank(b); return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1] || x[2] - y[2]; };
+    const all = S.descendants(root).filter((n) => n.type === 'note' && (n.kind || 'md') === 'md' && !S.inTrash(n.id))
+      .map((n) => ({ id: n.id, key: dayKeyOf(n, root), daily: isDailyId(n, root), created: n.created || 0, written: n.contentAt > 1 }));
+    const cur = all.find((e) => e.id === ui.note);
+    if (!cur) return;
+    // 실제로 쓴 메모만 (템플릿만 있고 손대지 않은 일지는 시각이 1이라 빠진다)
+    const written = all.filter((e) => e.written && e.id !== cur.id);
+    if (dir < 0) {
+      const t = written.filter((e) => cmp(e, cur) < 0).sort(cmp).pop();
+      if (!t) { toast(`이전에 쓴 ${ctx.kind === 'work' ? '업무일지' : '일기'}가 없어요`); return; }
+      go = () => openNote(t.id);
+    } else {
+      const today = ymd(new Date());
+      const cand = written.filter((e) => cmp(e, cur) > 0);
+      if (today > cur.key) cand.push({ key: today, daily: true, created: 0, today: true });
+      const t = cand.sort(cmp)[0];
+      const [y, m, d] = (t ? t.key : cur.key).split('-').map(Number);
+      // 다음 것이 없으면(오늘 이후) 다음 날 일지를 새로
+      go = t && !t.today ? () => openNote(t.id) : () => openDaily(ctx.kind, new Date(y, m - 1, d + (t ? 0 : 1)), { focus: false });
+    }
   }
   ed.flush?.();
-  const [y, m, d] = key.split('-').map(Number);
-  openDaily(info.kind, new Date(y, m - 1, d), { focus: false });
+  go();
   const inner = $('#editor .ed-inner');
   if (inner) inner.classList.add(dir > 0 ? 'slide-next' : 'slide-prev');
 }
@@ -598,7 +630,7 @@ function setupDaySwipe() {
     return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
   };
   window.addEventListener('wheel', (e) => {
-    if (!dailyInfo(ui.note) || e.ctrlKey || !overEditor(e) || document.querySelector('dialog[open]')) return;
+    if (!swipeCtx(ui.note) || e.ctrlKey || !overEditor(e) || document.querySelector('dialog[open]')) return;
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
     if (scrollsX(e.target, e.deltaX)) return;
     e.preventDefault(); // 브라우저의 "뒤로 가기" 몸짓 막기
@@ -622,7 +654,7 @@ function setupDaySwipe() {
   let st = null;
   box.addEventListener('touchstart', (e) => {
     st = null;
-    if (e.touches.length !== 1 || !dailyInfo(ui.note)) return;
+    if (e.touches.length !== 1 || !swipeCtx(ui.note)) return;
     const t = e.touches[0];
     if (t.clientX < 24 || t.clientX > innerWidth - 24) return; // 화면 가장자리는 브라우저 뒤로 가기 몸짓
     st = { x: t.clientX, y: t.clientY, at: Date.now(), el: e.target };
