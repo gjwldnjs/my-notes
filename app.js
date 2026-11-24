@@ -583,23 +583,20 @@ function stepDay(dir) {
     const rank = (e) => [e.key, e.daily ? 0 : 1, e.created];
     const cmp = (a, b) => { const x = rank(a), y = rank(b); return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1] || x[2] - y[2]; };
     const all = S.descendants(root).filter((n) => n.type === 'note' && (n.kind || 'md') === 'md' && !S.inTrash(n.id))
-      .map((n) => ({ id: n.id, key: dayKeyOf(n, root), daily: isDailyId(n, root), created: n.created || 0, written: n.contentAt > 1 }));
+      .map((n) => ({ id: n.id, key: dayKeyOf(n, root), daily: isDailyId(n, root), created: n.created || 0 }));
     const cur = all.find((e) => e.id === ui.note);
     if (!cur) return;
-    // 실제로 쓴 메모만 (템플릿만 있고 손대지 않은 일지는 시각이 1이라 빠진다)
-    const written = all.filter((e) => e.written && e.id !== cur.id);
-    if (dir < 0) {
-      const t = written.filter((e) => cmp(e, cur) < 0).sort(cmp).pop();
-      if (!t) { toast(`이전에 쓴 ${ctx.kind === 'work' ? '업무일지' : '일기'}가 없어요`); return; }
-      go = () => openNote(t.id);
-    } else {
-      const today = ymd(new Date());
-      const cand = written.filter((e) => cmp(e, cur) > 0);
-      if (today > cur.key) cand.push({ key: today, daily: true, created: 0, today: true });
-      const t = cand.sort(cmp)[0];
-      const [y, m, d] = (t ? t.key : cur.key).split('-').map(Number);
-      // 다음 것이 없으면(오늘 이후) 다음 날 일지를 새로
-      go = t && !t.today ? () => openNote(t.id) : () => openDaily(ctx.kind, new Date(y, m - 1, d + (t ? 0 : 1)), { focus: false });
+    // 같은 날에 메모가 더 있으면 그 안에서 먼저, 없으면 하루 앞·뒤로 (쓴 날이든 안 쓴 날이든 하루씩)
+    const same = all.filter((e) => e.key === cur.key).sort(cmp);
+    const sib = same[same.findIndex((e) => e.id === cur.id) + dir];
+    if (sib) go = () => openNote(sib.id);
+    else {
+      const [y, m, d] = cur.key.split('-').map(Number);
+      const next = new Date(y, m - 1, d + dir);
+      const day = all.filter((e) => e.key === ymd(next)).sort(cmp);
+      const t = dir > 0 ? day[0] : day[day.length - 1];
+      // 그날 메모가 없으면 일지 버튼처럼 그날 일지를 연다 (템플릿만 든 새 일지)
+      go = t ? () => openNote(t.id) : () => openDaily(ctx.kind, next, { focus: false });
     }
   }
   ed.flush?.();
@@ -619,10 +616,10 @@ function scrollsX(el, dx) {
 }
 function setupDaySwipe() {
   const box = $('#editor');
-  // 터치패드: 옆으로 민 양을 모아서 한 번 넘긴다. 넘긴 뒤 손을 떼도 관성으로 움직임이 한동안 더 오는데,
-  // 관성은 점점 약해지기만 한다 → 약해지던 움직임이 다시 세지거나 방향이 바뀌면 "새로 민 것"으로 보고 바로 받는다
-  let acc = 0, locked = false, quiet = 0, last = 0, peak = 0, dir = 0, decayed = false, lockAt = 0;
-  const reset = () => { acc = 0; locked = false; last = 0; peak = 0; decayed = false; };
+  // 터치패드: 옆으로 민 양을 모아서 한 번 넘기고, 그 몸짓이 끝날 때까지(손을 뗀 뒤 관성 포함) 더 넘기지 않는다 → 세게 밀어도 하루만.
+  // 관성은 점점 약해지기만 한다 → 거의 멎을 만큼(가장 셀 때의 1/5 아래) 약해졌다가 다시 확 세지면 "새로 민 것"으로 보고 바로 받는다
+  let acc = 0, locked = false, quiet = 0, peak = 0, trough = Infinity, dir = 0, lockAt = 0;
+  const reset = () => { acc = 0; locked = false; peak = 0; trough = Infinity; };
   // 날짜를 넘기면 편집 칸 안쪽이 새로 그려지는데, 브라우저는 마우스를 움직이기 전까지 그 자리를 다시 확인하지 않아
   // 신호가 편집 칸으로 오지 않을 때가 있다 → 창 전체에서 받고, 커서가 편집 칸 위에 있는지 좌표로 확인한다
   const overEditor = (e) => {
@@ -639,13 +636,11 @@ function setupDaySwipe() {
     quiet = setTimeout(reset, 120); // 움직임이 잠깐이라도 멈추면 바로 다음을 받는다
     if (locked) {
       peak = Math.max(peak, ad);
-      if (ad < peak * 0.6) decayed = true;
-      const fresh = d !== dir || (decayed && ad > 6 && ad > last * 1.5 && Date.now() - lockAt > 120);
-      last = ad;
+      if (ad <= Math.max(3, peak * 0.2)) trough = Math.min(trough, ad);
+      const fresh = (d !== dir && ad >= 8) || (trough < Infinity && ad >= Math.max(12, trough * 3) && Date.now() - lockAt > 120);
       if (!fresh) return;
       reset();
     }
-    last = ad;
     dir = d;
     acc += e.deltaX;
     if (Math.abs(acc) > 90) { locked = true; lockAt = Date.now(); peak = ad; acc = 0; stepDay(d > 0 ? 1 : -1); }
